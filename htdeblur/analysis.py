@@ -1,6 +1,5 @@
 import numpy as np
 import math
-import scipy
 import copy
 import matplotlib.pyplot as plt
 import llops as yp
@@ -17,7 +16,7 @@ illumination_power_dict = {'LED': 4781.42,
 _system_params_default = {
                              'pixel_count': (2580, 2180),
                              'numerical_aperture': 0.25,
-                             'magnification': 10.2,
+                             'magnification': 10.0,
                              'pixel_size': 6.5e-6,
                              'illumination_rep_rate': 250e3,  # Hz
                              'motion_settle_time': 0.25,  # seconds
@@ -30,7 +29,6 @@ _system_params_default = {
                              'n_tests': 25,
                              'frame_overlap': 0.8,
                              'sample_quantum_yield': 1.0,
-                             'pulse_count': None,
                              'camera_is_color': False,
                              'camera_readout_time': 0.032,  # seconds
                              'camera_quantum_efficency': 0.55,

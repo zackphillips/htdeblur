@@ -1,19 +1,18 @@
+# General imports
 import numpy as np
 import scipy as sp
 import matplotlib.pyplot as plt
 import skimage
 import os
 
-# MD imports
-from libwallerlab.projects.motiondeblur import blurkernel
-from libwallerlab.optics import pupil
+# Comptic imports
+from comptic.imaging import pupil
+from comptic import registration, containers
 
-# Libwallerlab imports
+# Llops imports
 import llops.operators as ops
 import llops as yp
-from libwallerlab.utilities import registration, io
 from llops.operators.solvers import iterative, objectivefunctions, regularizers
-
 
 class Reconstruction():
     """
@@ -199,6 +198,7 @@ class Reconstruction():
 
     def _genBlurKernels(self, centered_blur=True, axis=1):
         """Generate blur kernels."""
+        from htdeblur import blurkernel
         # Determine blur kernel shape
         self.blur_kernel_list = []
         for index, (blur_vector, blur_roi) in enumerate(zip(self.blur_vector_list, self.blur_vector_roi_list)):
@@ -207,6 +207,7 @@ class Reconstruction():
             blur_kernel_shape = [yp.next_fast_even_number(sh_roi + sh) for (sh_roi, sh) in zip(blur_roi.shape, self.dataset.frame_shape)]
 
             # Generate blur kernel
+
             blur_kernel = blurkernel.fromVector(blur_vector,
                                                 blur_kernel_shape,
                                                 axis=axis,

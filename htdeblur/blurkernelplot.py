@@ -2,8 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-from libwallerlab.utilities import io
-
 def plotBlurKernel(blur_kernel, ax):
     min_plot = np.amin(np.where(blur_kernel != 0), axis=1) - np.array([20,20])
     max_plot = np.amax(np.where(blur_kernel != 0), axis=1) + np.array([20,20])

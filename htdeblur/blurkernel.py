@@ -15,24 +15,18 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 import numpy as np
 import scipy as sp
 import math
-from scipy import fftpack
-from scipy import optimize as opt
-import scipy.misc as misc
-import itertools, operator
 import matplotlib.pyplot as plt
-from ipywidgets import *
 
 from . import solver
 from . import project_simplex_box
 from . import pgd
-from libwallerlab.utilities import io
 
 import llops as yp
 import llops.operators as ops
 
 from llops.operators.solvers import iterative, objectivefunctions
-from libwallerlab.utilities.fourier import iFt, Ft
-from llops.config import valid_backends, default_backend, default_dtype
+from llops import iFt, Ft
+from llops.config import default_backend, default_dtype
 
 eps = 1e-13
 
@@ -55,10 +49,15 @@ def cond(x):
         sigma_x = np.abs(x_fft)
         return np.max(sigma_x) / np.min(sigma_x)
 
-def vector(pulse_count, kernel_length=None, method='random_phase', n_tests=100, metric='dnf'):
+def vector(pulse_count, kernel_length=None,
+           method='random_phase', n_tests=100, metric='dnf', dtype=None, backend=None):
     """
     This is a helper function for solving for a blur vector in terms of it's condition #
     """
+
+    # Parse dtype and backend
+    dtype = dtype if dtype is not None else yp.config.default_dtype
+    backend = backend if backend is not None else yp.config.default_backend
 
     # Calculate kernel length if not provided
     if kernel_length is None:
@@ -107,6 +106,9 @@ def vector(pulse_count, kernel_length=None, method='random_phase', n_tests=100, 
 
     # Normalize kernel
     kernel_best /= np.sum(kernel_best)
+
+    # Cast
+    kernel_best = yp.cast(kernel_best, dtype, backend)
 
     return (kernel_best, metric_best)
 
@@ -211,7 +213,7 @@ def blurVectorsFromDataset(dataset, dtype=None, backend=None, debug=False,
                            use_phase_ramp=False, corrections={}):
     """
     This function generates the object size, image size, and blur kernels from
-    a libwallerlab dataset object.
+    a comptic dataset object.
 
         Args:
             dataset: An io.Dataset object
