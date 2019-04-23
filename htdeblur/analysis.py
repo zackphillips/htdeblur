@@ -27,6 +27,7 @@ _system_params_default = {
                              'motion_axis': 1,
                              'illuminance': 450,  # lux
                              'n_tests': 25,
+                             'pulse_count': None,
                              'frame_overlap': 0.8,
                              'sample_quantum_yield': 1.0,
                              'camera_is_color': False,
