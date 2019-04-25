@@ -417,6 +417,7 @@ class MotionDeblurAcquisition():
                  segment_delay_s=0,
                  initial_auto_exposure=False,
                  acquisition_timeout_s=3,
+                 illumination_sequence_count=1,
                  illumination_na_pad=0.03,
                  illumination_color={'w': 127},
                  only_store_first_and_last_position=True):
@@ -446,6 +447,7 @@ class MotionDeblurAcquisition():
         self.segment_delay_s = segment_delay_s
         self.only_store_first_and_last_position = only_store_first_and_last_position
         self.illumination_sequence = illumination_sequence
+        self.illumination_sequence_count = illumination_sequence_count
 
         # Define controller objects, which act as hardware interfaces.
         # These should be in an ordered dictionary because the order which they
@@ -508,7 +510,8 @@ class MotionDeblurAcquisition():
             pathway_type=self.motion_path_type, frame_spacing_mm=frame_spacing_mm)
 
         # Generate illumination sequence
-        self.hardware_controller_list['illumination'].state_sequence = self.genMotionIlluminationSequenceRandom(illumination_sequence=illumination_sequence)
+        self.hardware_controller_list['illumination'].state_sequence = self.genMotionIlluminationSequenceRandom(illumination_sequence=illumination_sequence,
+                                                 sequence_count=self.illumination_sequence_count)
 
         # Set up subframe captures
         self.subframe_capture_count = len(self.hardware_controller_list['illumination'].state_sequence[0])
@@ -740,8 +743,12 @@ class MotionDeblurAcquisition():
                     if self.subframe_capture_count > 1:
                         if self.reuse_illumination_sequence:
                             if hardware_controller_name == 'camera':
-                                trigger_output_settings[hardware_controller.trigger_pin] = self.TRIG_MODE_ITERATION
-                                trigger_input_settings[hardware_controller.trigger_pin] = self.TRIG_MODE_ITERATION
+                                if self.illumination_sequence_count == 1:
+                                    trigger_output_settings[hardware_controller.trigger_pin] = self.TRIG_MODE_ITERATION
+                                    trigger_input_settings[hardware_controller.trigger_pin] = self.TRIG_MODE_ITERATION
+                                else:
+                                    trigger_output_settings[hardware_controller.trigger_pin] = len(self.hardware_controller_list['position'].state_sequence[0]['states']) // self.illumination_sequence_count
+                                    trigger_input_settings[hardware_controller.trigger_pin] = len(self.hardware_controller_list['position'].state_sequence[0]['states']) // self.illumination_sequence_count
 
                             elif hardware_controller_name == 'position':
                                 trigger_output_settings[hardware_controller.trigger_pin] = self.TRIG_MODE_START
@@ -1289,7 +1296,8 @@ class MotionDeblurAcquisition():
         plt.title('Pathway (b is start, y/o is end)')
         plt.gca().invert_yaxis()
 
-    def genMotionIlluminationSequenceRandom(self, illumination_sequence=None):
+    def genMotionIlluminationSequenceRandom(self, sequence_count=1,
+                                            illumination_sequence=None):
         led_list = np.arange(self.metadata.illumination.state_list.design.shape[0])
         bf_mask = self.metadata.illumination.state_list.design[:, 0] ** 2 \
             + self.metadata.illumination.state_list.design[:, 1] ** 2 < (
@@ -1298,13 +1306,12 @@ class MotionDeblurAcquisition():
         illumination_state_list = []
         linear_segments_processed = {}
 
-
         # Loop over DPC patterns (frames)
         for frame_index, frame_position_dict in enumerate(self.hardware_controller_list['position'].state_sequence):
             frame_position_list = frame_position_dict['states']
 
-            # Get number of positions in blur kernel from this frame
-            pattern_count = len(frame_position_list)
+            # Get number of positions in blur kernel from this frame. Divide into subsequences
+            pattern_count = len(frame_position_list) // sequence_count
 
             # Determine the number of non-zero illumination positions
             pattern_count_used = int(round(pattern_count * self.saturation_factor))
@@ -1317,89 +1324,103 @@ class MotionDeblurAcquisition():
 
             if not self.reuse_illumination_sequence or frame_index == 0:
 
-                # Use provided illumination seqence if given
-                if illumination_sequence:
-                    blur_vector = illumination_sequence
-                else:
-                    blur_vector = np.zeros(pattern_count)
-                    # Generate blur vector
-                    blur_vector = np.zeros(pattern_count)
-                    if self.blur_vector_method == 'strobe':
-                        blur_vector = np.zeros(pattern_count)
-                        blur_vector[pattern_count_start + pattern_count_used // 2] = 1
-                    elif self.blur_vector_method == 'center':
-                        blur_vector = np.zeros(pattern_count)
-                        # Determine distance traveled within this frame (including readout time)
-                        frame_pixel_count = round(frame_position_list[0][0]['frame_distance'] / (self.metadata.system.eff_pixel_size_um / 1000))
-                        exposure_pixel_count = round(frame_position_list[0][0]['exposure_distance'] / (self.metadata.system.eff_pixel_size_um / 1000))
-                        if not frame_pixel_count // 2 < exposure_pixel_count:
-                            print("WARNING: Camera will not expose during center flash (%d pixels, %d pixels used of %d pixels total)" % (frame_pixel_count // 2, exposure_pixel_count, pattern_count))
-                            blur_vector[pattern_count_used] = 1
-                        else:
-                            # Set center position to be on
-                            blur_vector[frame_pixel_count // 2] = 1
+                blur_vector_full = []
 
-                    elif self.blur_vector_method == 'start_end':
-                        blur_vector = np.zeros(pattern_count)
-                        blur_vector[pattern_count_start] = 1
-                        blur_vector[pattern_count_start + pattern_count_used - 1] = 1
-                    elif self.blur_vector_method == 'start_middle_end':
-                        blur_vector = np.zeros(pattern_count)
-                        blur_vector[pattern_count_start] = 1
-                        blur_vector[pattern_count_start + pattern_count_used // 2] = 1
-                        blur_vector[pattern_count_start + pattern_count_used - 1] = 1
-                    elif self.blur_vector_method == 'tens':
-                        blur_vector = np.zeros(pattern_count)
-                        blur_vector[pattern_count_start] = 1
-                        blur_vector[pattern_count_start + 10] = 1
-                        blur_vector[pattern_count_start + 20] = 1
-                        blur_vector[pattern_count_start + 30] = 1
-                        blur_vector[pattern_count_start + 40] = 1
-                    elif self.blur_vector_method == 'twenties':
-                        blur_vector = np.zeros(pattern_count)
-                        blur_vector[pattern_count_start + 0] = 1
-                        blur_vector[pattern_count_start + 20] = 1
-                        blur_vector[pattern_count_start + 40] = 1
-                        blur_vector[pattern_count_start + 60] = 1
-                        blur_vector[pattern_count_start + 80] = 1
-                        blur_vector[pattern_count_start + 100] = 1
-                        blur_vector[pattern_count_start + 120] = 1
-                        blur_vector[pattern_count_start + 140] = 1
-                        blur_vector[pattern_count_start + 160] = 1
-                        blur_vector[pattern_count_start + 180] = 1
-                    elif self.blur_vector_method == 'quarters':
-                        blur_vector = np.zeros(pattern_count)
-                        blur_vector[pattern_count_start] = 1
-                        blur_vector[pattern_count_start + pattern_count_used // 4] = 1
-                        blur_vector[pattern_count_start + pattern_count_used // 2] = 1
-                        blur_vector[pattern_count_start + pattern_count_used // 2 + pattern_count_used // 4] = 1
-                        blur_vector[pattern_count_start + pattern_count_used - 1] = 1
-                    elif self.blur_vector_method == 'random':
-                        blur_vector[pattern_count_start:pattern_count_start +
-                                    pattern_count_used] = np.random.rand(pattern_count_used)
-                    elif self.blur_vector_method == 'constant':
-                        blur_vector[pattern_count_start:pattern_count_start +
-                                    pattern_count_used] = np.ones(pattern_count_used)
-                    elif self.blur_vector_method in ['coded', 'pseudo_random']:
-                        if self.kernel_pulse_count is not None:
-                            pulse_count = self.kernel_pulse_count
-                        else:
-                            pulse_count = pattern_count_used // 2
-
-                        from htdeblur import blurkernel
-                        blur_vector_tmp, kappa = blurkernel.vector(pulse_count, kernel_length=pattern_count_used)
-                        blur_vector[pattern_count_start:pattern_count_start + pattern_count_used] = blur_vector_tmp
+                # Generate several blur vectors
+                for _ in range(sequence_count):
+                    # Use provided illumination seqence if given
+                    if illumination_sequence:
+                        blur_vector = illumination_sequence
                     else:
-                        raise ValueError('Invalid blur kernel method: %s' % self.blur_vector_method)
+                        blur_vector = np.zeros(pattern_count)
+                        # Generate blur vector
+                        blur_vector = np.zeros(pattern_count)
+                        if self.blur_vector_method == 'strobe':
+                            blur_vector = np.zeros(pattern_count)
+                            blur_vector[pattern_count_start + pattern_count_used // 2] = 1
+                        elif self.blur_vector_method == 'center':
+                            blur_vector = np.zeros(pattern_count)
+                            # Determine distance traveled within this frame (including readout time)
+                            frame_pixel_count = round(frame_position_list[0][0]['frame_distance'] / (self.metadata.system.eff_pixel_size_um / 1000))
+                            exposure_pixel_count = round(frame_position_list[0][0]['exposure_distance'] / (self.metadata.system.eff_pixel_size_um / 1000))
+                            if not frame_pixel_count // 2 < exposure_pixel_count:
+                                print("WARNING: Camera will not expose during center flash (%d pixels, %d pixels used of %d pixels total)" % (frame_pixel_count // 2, exposure_pixel_count, pattern_count))
+                                blur_vector[pattern_count_used] = 1
+                            else:
+                                # Set center position to be on
+                                blur_vector[frame_pixel_count // 2] = 1
 
-                linear_segments_processed[str(frame_index)] = blur_vector
+                        elif self.blur_vector_method == 'start_end':
+                            blur_vector = np.zeros(pattern_count)
+                            blur_vector[pattern_count_start] = 1
+                            blur_vector[pattern_count_start + pattern_count_used - 1] = 1
+                        elif self.blur_vector_method == 'start_middle_end':
+                            blur_vector = np.zeros(pattern_count)
+                            blur_vector[pattern_count_start] = 1
+                            blur_vector[pattern_count_start + pattern_count_used // 2] = 1
+                            blur_vector[pattern_count_start + pattern_count_used - 1] = 1
+                        elif self.blur_vector_method == 'tens':
+                            blur_vector = np.zeros(pattern_count)
+                            blur_vector[pattern_count_start] = 1
+                            blur_vector[pattern_count_start + 10] = 1
+                            blur_vector[pattern_count_start + 20] = 1
+                            blur_vector[pattern_count_start + 30] = 1
+                            blur_vector[pattern_count_start + 40] = 1
+                        elif self.blur_vector_method == 'twenties':
+                            blur_vector = np.zeros(pattern_count)
+                            blur_vector[pattern_count_start + 0] = 1
+                            blur_vector[pattern_count_start + 20] = 1
+                            blur_vector[pattern_count_start + 40] = 1
+                            blur_vector[pattern_count_start + 60] = 1
+                            blur_vector[pattern_count_start + 80] = 1
+                            blur_vector[pattern_count_start + 100] = 1
+                            blur_vector[pattern_count_start + 120] = 1
+                            blur_vector[pattern_count_start + 140] = 1
+                            blur_vector[pattern_count_start + 160] = 1
+                            blur_vector[pattern_count_start + 180] = 1
+                        elif self.blur_vector_method == 'quarters':
+                            blur_vector = np.zeros(pattern_count)
+                            blur_vector[pattern_count_start] = 1
+                            blur_vector[pattern_count_start + pattern_count_used // 4] = 1
+                            blur_vector[pattern_count_start + pattern_count_used // 2] = 1
+                            blur_vector[pattern_count_start + pattern_count_used // 2 + pattern_count_used // 4] = 1
+                            blur_vector[pattern_count_start + pattern_count_used - 1] = 1
+                        elif self.blur_vector_method == 'random':
+                            blur_vector[pattern_count_start:pattern_count_start +
+                                        pattern_count_used] = np.random.rand(pattern_count_used)
+                        elif self.blur_vector_method == 'constant':
+                            blur_vector[pattern_count_start:pattern_count_start +
+                                        pattern_count_used] = np.ones(pattern_count_used)
+                        elif self.blur_vector_method in ['coded', 'pseudo_random']:
+                            if self.kernel_pulse_count is not None:
+                                pulse_count = self.kernel_pulse_count
+                            else:
+                                pulse_count = pattern_count_used // 2
+
+                            from htdeblur import blurkernel
+                            blur_vector_tmp, kappa = blurkernel.vector(pulse_count, kernel_length=pattern_count_used)
+                            blur_vector[pattern_count_start:pattern_count_start + pattern_count_used] = blur_vector_tmp
+                        else:
+                            raise ValueError('Invalid blur kernel method: %s' % self.blur_vector_method)
+
+                    # Append to blur_vector_full
+                    blur_vector_full += list(blur_vector)
+
+                # Ensure the pattern is the correct length
+                if len(blur_vector_full) < len(frame_position_list):
+                    blur_vector_full += [0] * (len(frame_position_list) - len(blur_vector_full))
+                elif len(blur_vector_full) > len(frame_position_list):
+                    raise ValueError
+
+                # Assign
+                linear_segments_processed[str(frame_index)] = blur_vector_full
             else:
-                blur_vector = linear_segments_processed['0']
+                blur_vector_full = linear_segments_processed['0']
 
             single_frame_state_list_illumination = []
 
             # Loop over time points (irrelevent for dpc)
-            for time_index, illumination_value in enumerate(blur_vector):
+            for time_index, illumination_value in enumerate(blur_vector_full):
 
                 time_point_state_list = []
                 # Loop over DPC patterns (which are themselves frames)

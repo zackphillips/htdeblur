@@ -265,7 +265,7 @@ class MotionDeblurDataset(Dataset):
                             positions_used.append(pos)
 
                 # Generate ROI for this blur vector
-                from libwallerlab.projects.motiondeblur.blurkernel import getPositionListBoundingBox
+                from htdeblur.blurkernel import getPositionListBoundingBox
                 blur_vector_roi = getPositionListBoundingBox(positions_used)
 
                 # Append to list
@@ -401,7 +401,7 @@ class MotionDeblurDataset(Dataset):
     def normalize(self, force=False):
         if 'normalization' not in self.metadata.calibration or force:
             # Calculation normalization vectors
-            from libwallerlab.projects.motiondeblur.recon import normalize_measurements
+            from htdeblur.recon import normalize_measurements
             (frame_normalization_list_y, frame_normalization_list_x) = normalize_measurements(self, debug=False)
 
             # Convert to numpy for saving
@@ -479,7 +479,7 @@ class MotionDeblurDataset(Dataset):
                         roi += offset
 
                     # Perform registration
-                    from libwallerlab.projects.motiondeblur.recon import register_roi_list
+                    from comptic.registration import register_roi_list
                     frame_offset_list_segment = register_roi_list(self.frame_list,
                                                                   roi_list,
                                                                   debug=debug,
