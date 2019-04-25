@@ -399,22 +399,19 @@ def blurKernelRecoveryFromStatic(blurred, static, solver='iterative', reg=None, 
 
     return(kernel_recovered)
 
-def registerDatasetImages(dataset, force_full_fov=False):
+def registerDatasetImages(dataset, roi=None):
+    from comptic.registration import registerImage
     shift_list = []
     image_list = []
     for index in range(1, len(dataset.frame_list)):
-        if dataset.metadata.camera.roi is not None and not force_full_fov:
-            roi = dataset.metadata.camera.roi
-            shift_list.append(registerImage(dataset.frame_list[index - 1][roi.y_start:roi.y_start + roi.size[0],
-                                                                          roi.x_start:roi.x_start + roi.size[1]],
-                                            dataset.frame_list[index][roi.y_start:roi.y_start + roi.size[0],
-                                                                      roi.x_start:roi.x_start + roi.size[1]]))
+        if roi is not None:
+            shift_list.append(registerImage(dataset.frame_list[index - 1][roi.slice],
+                                            dataset.frame_list[index][roi.slice]))
 
-            image_list.append((dataset.frame_list[index - 1][roi.y_start:roi.y_start + roi.size[0],
-                                                             roi.x_start:roi.x_start + roi.size[1]], dataset.frame_list[index][roi.y_start:roi.y_start + roi.size[0],
-                                                                                                                                 roi.x_start:roi.x_start + roi.size[1]]))
+            image_list.append((dataset.frame_list[index - 1][roi.slice], dataset.frame_list[index][roi.slice]))
         else:
             shift_list.append(registerImage(dataset.frame_list[index - 1], dataset.frame_list[index]))
+        print(shift_list)
         print("Registered image %d of %d, shift was (%d, %d) pixels" %
               (index, len(dataset.frame_list), shift_list[-1][0], shift_list[-1]))
     return(shift_list, image_list)

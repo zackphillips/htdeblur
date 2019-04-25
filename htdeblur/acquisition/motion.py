@@ -21,7 +21,6 @@ import llops as yp
 from matplotlib_scalebar.scalebar import ScaleBar
 
 # Libwallerlab imports
-from comptic.containers import Dataset
 from llops import display
 from llops import Roi
 
@@ -174,7 +173,11 @@ class StopAndStareAcquisition():
         t_acq_sns = time.time() - t0
         print("Acquisition took %.4f seconds" % (t_acq_sns))
 
-        dataset = Dataset()
+        # Create dataset
+        from htdeblur.mddataset import MotionDeblurDataset
+        dataset = MotionDeblurDataset()
+
+        # Assign acquisition time
         self.metadata.acquisition_time_s = t_acq_sns
 
         # Apply simple geometric transformations
@@ -961,7 +964,8 @@ class MotionDeblurAcquisition():
 
         # Parse dataset
         if dataset is None:
-            dataset = Dataset()
+            from htdeblur.mddataset import MotionDeblurDataset
+            dataset = MotionDeblurDataset()
 
         # Read frames and timestamps from buffer
         (self.frame_list, elapsed_frame_time_ms) = self.hardware_controller_list['camera'].readFramesFromBuffer()
