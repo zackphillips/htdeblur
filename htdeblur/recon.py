@@ -12,7 +12,7 @@ from comptic import registration, containers
 # Llops imports
 import llops.operators as ops
 import llops as yp
-from llops.operators.solvers import iterative, objectivefunctions, regularizers
+from llops.solvers import iterative, objectivefunctions, regularizers
 
 class Reconstruction():
     """

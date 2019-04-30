@@ -24,7 +24,7 @@ from . import pgd
 import llops as yp
 import llops.operators as ops
 
-from llops.operators.solvers import iterative, objectivefunctions
+from llops.solvers import iterative, objectivefunctions
 from llops import iFt, Ft
 from llops.config import default_backend, default_dtype
 
