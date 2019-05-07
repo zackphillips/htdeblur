@@ -819,8 +819,8 @@ class MotionDeblurAcquisition():
                             index = preload_index
 
                         velocity = self.hardware_controller_list[hardware_controller_name].state_sequence[0]['common']['velocity']
-                        acceleration = self.hardware_controller_list[hardware_controller_name].getAcceleration()
-                        jerk = self.hardware_controller_list[hardware_controller_name].getJerk()
+                        acceleration = self.hardware_controller_list[hardware_controller_name].acceleration
+                        jerk = self.hardware_controller_list[hardware_controller_name].jerk
 
                         # Calculate spin-up time and distance
                         # http://www.wolframalpha.com/input/?i=v+%3D+t+*+(a+%2B+0.5*j+*+t)+solve+for+t

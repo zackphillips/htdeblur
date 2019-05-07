@@ -265,9 +265,9 @@ class PositionController(HardwareController):
         self.state_sequence_experiment = []
         self.state_sequence_preload = []
 
-        self.velocity = velocity
-        self.acceleration = acceleration
-        self.jerk = 11.5
+        self._velocity = velocity
+        self._acceleration = acceleration
+        self._jerk = 11.5
         self.encoder_window = (0,0)
         self.extra_run_up_time_s = 0
 
@@ -284,7 +284,7 @@ class PositionController(HardwareController):
         self.command_terminator = '\r'
         self.trigger_pulse_width_us = 2000
         self.device_steps_per_um = 25 # Don't change
-        self.steps_per_um = 1 #
+        self._steps_per_um = 1 #
 
         # Load device
         self.reload()
@@ -300,14 +300,14 @@ class PositionController(HardwareController):
         self.command('ENCW Y 0') # Set encoder window (prevents excessive homing)
         self.command('SERVO X 0')  # Turn off servo behavior
         self.command('SERVO Y 0')  # Turn off servo behavior
-        self.command('SS ' + str(self.steps_per_um)) # Set encoder window (prevents excessive homing)
+        self.command('SS ' + str(self._steps_per_um)) # Set encoder window (prevents excessive homing)
 
         # Hard-code jerk
         self.command('SCS 60000') # jerk = 11.5 for SCS 60000
 
         # Set paremeters
-        self.setVelocity(self.velocity)
-        self.setAcceleration(self.acceleration)
+        self.velocity = self.velocity
+        self.acceleration = self.acceleration
 
     def reload(self):
         # Close device if it is open
@@ -409,8 +409,8 @@ class PositionController(HardwareController):
             print('Offset is (%g, %g)' % (offset[0], offset[1]))
 
         # Set velocity
-        self.setVelocity(velocity)
-        assert abs(self.getVelocity() - velocity) < 1e-3
+        self.velocity = (velocity)
+        assert abs(self.velocity - velocity) < 1e-3
 
         # Set trigger point
         self.command('TTLTP 1 1')
@@ -419,12 +419,12 @@ class PositionController(HardwareController):
         self.command('TTLMOT 1 1')
 
         # Send movement command (40 is relative motion, 41 is absolute)
-        x_move = int(self.device_steps_per_um / self.steps_per_um * int(1000 * self.relative_move_mm[0]))
-        y_move = int(self.device_steps_per_um / self.steps_per_um * int(1000 * self.relative_move_mm[1]))
+        x_move = int(self.device_steps_per_um / self._steps_per_um * int(1000 * self.relative_move_mm[0]))
+        y_move = int(self.device_steps_per_um / self._steps_per_um * int(1000 * self.relative_move_mm[1]))
         self.command('TTLACT 1 40 ' + str(x_move) + ' ' + str(y_move)  + ' 0')
 
         if pathway_debug:
-            print("Preloaded relative move of (%.4f, %.4f) " % (x_move / 1000 / self.device_steps_per_um * self.steps_per_um, y_move / 1000 / self.device_steps_per_um * self.steps_per_um))
+            print("Preloaded relative move of (%.4f, %.4f) " % (x_move / 1000 / self.device_steps_per_um * self._steps_per_um, y_move / 1000 / self.device_steps_per_um * self._steps_per_um))
 
         # Send to initial position
         self.goToPosition(self.preload_start_position_mm, blocking=True)
@@ -433,7 +433,7 @@ class PositionController(HardwareController):
     def runSequence(self, commandFunc=None):
 
         # Set velocity
-        self.setVelocity(self.state_sequence_preload_common['velocity'])
+        self.velocity = (self.state_sequence_preload_common['velocity'])
 
         # If the stage uses software triggering, send commands directly, otherwise just enable triggering
         if self.trigger_mode is 'software':
@@ -517,46 +517,79 @@ class PositionController(HardwareController):
             raise ValueError("Error - invalid position_list_index (%d)" % index)
 
     ### Position Controller Specific commands ###
-    def setStepsPerMicron(self, steps_per_um):
-        self.steps_per_um = steps_per_um
-        self.command('SS ' + str(self.steps_per_um)) # Set encoder window (prevents excessive homing)
 
-    def getStepsPerMicron():
-        return self.steps_per_um
+    @property
+    def steps_per_um(self):
+        self._steps_per_um = int(self.command('SS').split(self.command_terminator)[0])
+        return self._steps_per_um
 
-    def setVelocity(self, velocity_mm_s):
-        self.stop()
-        self.velocity = velocity_mm_s
-        self.command('SMS ' + str(int(self.velocity * 1000 * self.device_steps_per_um)) + ' I')
+    @steps_per_um.setter
+    def steps_per_um(self, steps_per_um):
+        self._steps_per_um = steps_per_um
+        self.command('SS ' + str(self._steps_per_um)) # Set encoder window (prevents excessive homing)
 
-    def getVelocity(self):
+    @property
+    def position(self):
+        """Returns stage posiiton in mm."""
+
+        # Get position
+        raw = self.command('P').split(',')
+        self._position = ((float(raw[0])/  1000. * self._steps_per_um / self.device_steps_per_um, float(raw[1]) / 1000. * self._steps_per_um / self.device_steps_per_um))
+
+        # Return cached variable
+        return self._position
+
+    @position.setter
+    def position(self, new_position):
+        """Sets stage position in mm."""
+
+        # Store current position
+        self._position = new_position
+
+        # Go to position
+        self.command('G ' + str(int(position_mm[0] * 1000 * self.device_steps_per_um / self._steps_per_um)) + ' ' + str(int(position_mm[1] * 1000 * self.device_steps_per_um / self._steps_per_um)))
+
+        # Block until movement is done
+        while not self.isReadyForSequence():
+            time.sleep(0.01)
+
+    @property
+    def velocity(self):
         velocity_str = self.command('SMS I')
-        return int(velocity_str.replace('\r','')) / 1000  / self.device_steps_per_um
+        self._velocity = int(velocity_str.replace('\r','')) / 1000  / self.device_steps_per_um
+        return self._velocity
 
-    def setAcceleration(self, acceleration_mm_s_2):
+    @velocity.setter
+    def velocity(self, velocity_mm_s):
         self.stop()
-        self.acceleration = acceleration_mm_s_2
+        self._velocity = velocity_mm_s
+        self.command('SMS ' + str(int(self._velocity * 1000 * self.device_steps_per_um)) + ' I')
+
+    @property
+    def acceleration(self):
+        acceleration_str = self.command('SAS I')
+        self._acceleration = int(acceleration_str.replace('\r','')) / 1000 / self.device_steps_per_um
+        return self._acceleration
+
+    @acceleration.setter
+    def acceleration(self, acceleration_mm_s_2):
+        self.stop()
+        self._acceleration = acceleration_mm_s_2
         self.command('SAS ' + str(int(self.acceleration * 1000 * self.device_steps_per_um)) + ' I') # Change acceleration
 
-    def getAcceleration(self):
-        acceleration_str = self.command('SAS I')
-        return int(acceleration_str.replace('\r','')) / 1000 / self.device_steps_per_um
-
-    def getJerk(self):
+    @property
+    def jerk(self):
         ''' Returns jerk, the rate of change of acceleration in mm/s/s/s '''
-        # val = float(self.command('SCS I'))
-        # self.jerk = int(round(7423222950 / val / 1e3)) # convert to mm_s_s_s
-        return(self.jerk)
-    #
-    # def setJerk(self, new_jerk_mm_s_s_s):
-    #     ''' Sets jerk, the rate of change of acceleration in mm/s/s/s '''
-    #     val = int(round(7423222950 / (new_jerk_mm_s_s_s * 1000))) # convert to um_s_s_s
-    #     self.command('SCS ' + str(val) + ' I')
+        val = float(self.command('SCS I'))
+        self._jerk = int(round(7423222950 / val / 1e3)) # convert to mm_s_s_s
+        return self._jerk
 
-    def setSCurveValue(self, s_curve_value):
-        self.stop()
-        self.s_curve_value = s_curve_value
-        self.command('SCS ' + str(self.s_curve_value)) # Change s-surve value (arb. units)
+    @jerk.setter
+    def jerk(self, new_jerk_mm_s_s_s):
+        ''' Sets jerk, the rate of change of acceleration in mm/s/s/s '''
+        self._jerk = new_jerk_mm_s_s_s
+        val = int(round(7423222950 / (new_jerk_mm_s_s_s * 1000))) # convert to um_s_s_s
+        self.command('SCS ' + str(val) + ' I')
 
     def setEncoderWindow(self, encoder_window):
         self.stop()
@@ -574,8 +607,8 @@ class PositionController(HardwareController):
             self.command('ENCODER Y ' + str(int(state[0] > 0)))
 
     def goToPositionRapid(self, position_mm, blocking=True):
-        v = self.getVelocity()
-        self.setVelocity(self.rapid_velocity)
+        v = self.velocity
+        self.velocity = (self.rapid_velocity)
         self.command('ENCODER X 1')
         self.command('ENCODER Y 1')
         self.command('ENCW X 1000')
@@ -585,24 +618,24 @@ class PositionController(HardwareController):
         self.command('ENCODER Y 0')
         self.command('ENCW X 10000')
         self.command('ENCW Y 10000')
-        self.setVelocity(v)
+        self.velocity = v
 
     def goToPosition(self, position_mm, blocking=False):
-        self.command('G ' + str(int(position_mm[0] * 1000 * self.device_steps_per_um / self.steps_per_um)) + ' ' + str(int(position_mm[1] * 1000 * self.device_steps_per_um / self.steps_per_um)))
+        self.command('G ' + str(int(position_mm[0] * 1000 * self.device_steps_per_um / self._steps_per_um)) + ' ' + str(int(position_mm[1] * 1000 * self.device_steps_per_um / self._steps_per_um)))
         if blocking:
             while not self.isReadyForSequence():
                 time.sleep(0.01)
 
     def test(self, v=0.5, d=1, tol=0.25):
-        self.setVelocity(10)
-        self.setAcceleration(self.acceleration)
+        self.velocity = (10)
+        self.acceleration = (self.acceleration)
         self.goToPosition((0, 0),blocking=True)
         t0 = time.time()
-        self.setVelocity(v)
+        self.velocity = (v)
         self.goToPosition((d, 0),blocking=True)
         t = time.time()
         assert (t- t0) - d / v < tol, "Time difference (%.2f) > tolerance (%.2f)" % ((t- t0) - d / v, tol)
-        self.setVelocity(v)
+        self.velocity = (v)
         self.goToPosition((0, 0),blocking=True)
         assert (t- t0) - 2 * d / v < tol, "Time difference (%.2f) > tolerance (%.2f)" % ((t- t0) - 2 * d / v, tol)
         return(True)
@@ -673,23 +706,23 @@ class PositionController(HardwareController):
         '''
         Function to get x position of stage in mm
         '''
-        return(float(self.command('PX')) /  1000. * self.steps_per_um / self.device_steps_per_um)
+        return(float(self.command('PX')) /  1000. * self._steps_per_um / self.device_steps_per_um)
 
     def getPosY(self):
         '''
         Function to get y position of stage in mm
         '''
-        return(float(self.command('PY')) / 1000. * self.steps_per_um / self.device_steps_per_um)
+        return(float(self.command('PY')) / 1000. * self._steps_per_um / self.device_steps_per_um)
 
     def getPosXY(self):
         '''
         Function to get y position of stage in mm
         '''
         raw = self.command('P').split(',')
-        return((float(raw[0])/  1000. * self.steps_per_um / self.device_steps_per_um, float(raw[1]) / 1000. * self.steps_per_um / self.device_steps_per_um))
+        return((float(raw[0])/  1000. * self._steps_per_um / self.device_steps_per_um, float(raw[1]) / 1000. * self._steps_per_um / self.device_steps_per_um))
 
     def zero(self):
-        self.setVelocity(self.rapid_velocity)
+        self.velocity = (self.rapid_velocity)
         self.command('PS 0 0')
 
     def setJoystickFlip(self,flip_x=False, flip_y=False):
