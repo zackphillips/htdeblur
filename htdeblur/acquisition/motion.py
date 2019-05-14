@@ -456,17 +456,17 @@ class MotionDeblurAcquisition():
 
         # First add hardware triggered elements so they perform their set-up before we trigger software elements
         for controller in hardware_controller_list:
-            if controller.trigger_mode is 'hardware':
-                self.hardware_controller_list[controller.type] = controller
-                controller.reset()
-                controller.seq_clear()
+            if hasattr(controller, 'trigger_mode'):
+                if controller.trigger_mode is 'hardware':
+                    self.hardware_controller_list[controller.type] = controller
+                    controller.reset()
+                    controller.seq_clear()
 
         # Then, add software triggered elements
         for controller in hardware_controller_list:
-            if controller.trigger_mode is 'software':
-                self.hardware_controller_list[controller.type] = controller
-                controller.reset()
-                controller.seq_clear()
+            self.hardware_controller_list[controller.type] = controller
+            controller.reset()
+            controller.seq_clear()
 
         # Check to be sure a sequence acquisition is not running
         assert 'camera' in self.hardware_controller_list, 'Did not find camera controller!'
@@ -735,7 +735,7 @@ class MotionDeblurAcquisition():
             for hardware_controller_name in self.hardware_controller_list:
                 hardware_controller = self.hardware_controller_list[hardware_controller_name]
 
-                if 'hardware' in hardware_controller.trigger_mode:
+                if hasattr(hardware_controller, 'trigger_mode') and 'hardware' in hardware_controller.trigger_mode:
                     # Check that trigger pins are configured
                     assert hardware_controller.trigger_pin is not None, 'Trigger pin must be configured for hardware triggering!'
 
@@ -866,8 +866,8 @@ class MotionDeblurAcquisition():
                         # spin_up_distance_mm = 0
                         spin_up_time_s = max(spin_up_time_s, 0.0001)
 
-                        self.hardware_controller_list['illumination'].setupTriggering(self.hardware_controller_list['illumination'].motion_stage_trigger_index, int(
-                            self.hardware_controller_list[hardware_controller_name].trigger_pulse_width_us), int(spin_up_time_s * 1e6))  # convert to seconds
+                        self.hardware_controller_list['illumination'].setupTriggering(self.hardware_controller_list['position'].trigger_pin, int(
+                            self.hardware_controller_list['position'].trigger_pulse_width_us), int(spin_up_time_s * 1e6))  # convert to seconds
 
                         # Tell motion stage to offset it's positions by these amounts
                         self.hardware_controller_list['position'].preload_run_up_distance_mm = spin_up_distance_mm
@@ -893,8 +893,8 @@ class MotionDeblurAcquisition():
 
                 # Set trigger frame time based on first pathway TODO: This is a hack
                 if 'position' in self.hardware_controller_list:
-                    self.hardware_controller_list['illumination'].trigger_frame_time_s[self.hardware_controller_list['illumination']
-                                                                                       .camera_trigger_index] = self.hardware_controller_list['position'].state_sequence[0]['common']['frame_time'] * 1e6
+                    self.hardware_controller_list['illumination'].trigger_frame_time_s[self.hardware_controller_list['camera']
+                                                                                       .trigger_pin] = self.hardware_controller_list['position'].state_sequence[0]['common']['frame_time'] * 1e6
 
                     # Tell stage to start moving
                     self.hardware_controller_list['position'].runSequence()

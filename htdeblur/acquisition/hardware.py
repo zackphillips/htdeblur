@@ -204,8 +204,6 @@ class LedArrayController(IlluminateController):
         # Device configuration
         self.accepts_preload = True
         self.does_trigger_camera = False
-        self.camera_trigger_index = None
-        self.motion_stage_trigger_index = None
         self.state_sequence = None
 
         super(self.__class__, self).__init__(com_port, baud_rate)
@@ -217,43 +215,19 @@ class LedArrayController(IlluminateController):
     def seq_clear(self):
         self.state_sequence = None
 
-    def setupCameraTriggering(self, pin_index = 0, delay_ms = 0):
-        '''
-        Sets up camera triggering for primary trigger output
-        '''
-        self.does_trigger_camera = True
-        self.command('trsetup.' + str(self.camera_trigger_index) + '.' + str(pin_index) + "." + str(delay_ms))
-
-    def setupMotionStageTriggering(self, pin_index = 1, delay_ms = 1):
-        '''
-        Sets up camera triggering for primary trigger output
-        '''
-        self.command('trsetup.' + str(self.motion_stage_trigger_index) + '.' + str(pin_index) + "." + str(delay_ms))
-
-    def triggerCamera(self):
-        '''
-        Triggers camera (assumed to be primary trigger)
-        '''
-        self.command('tr.' + str(self.camera_trigger_index))
-
-    def triggerMotionStage(self):
-        '''
-        Triggers stage (assumed to be primary trigger)
-        '''
-        self.command('tr.' + str(self.motion_stage_trigger_index))
-
 
 class PositionController(HardwareController):
     '''
     This is a class for controlling a position sequence
     '''
-    def __init__(self, com_port, velocity=25, acceleration=1e3, device_name="xy_stage_serial", baud_rate=38400):
+    def __init__(self, com_port, velocity=25, acceleration=1e3, trigger_mode='software', device_name="xy_stage_serial", baud_rate=38400):
         HardwareController.__init__(self, "position", device_name)
 
         # Device objects
         self.device_name = device_name
         self.com_port = com_port
         self.baud_rate = baud_rate
+        self.trigger_mode = trigger_mode
         self.ser = None
 
         # Device configuration
@@ -771,7 +745,8 @@ class MicroManagerHardwareController(HardwareController):
 
 class CameraController(MicroManagerHardwareController):
 
-    def __init__(self, camera_name, pixel_size_um=None, mm_directory=None, cfg_file=None, bayer_coupling_matrix=None):
+    def __init__(self, camera_name, pixel_size_um=None, trigger_mode='software',
+                 mm_directory=None, cfg_file=None, bayer_coupling_matrix=None):
 
         self.device_name = camera_name
         # Initialize metaclass
@@ -799,12 +774,13 @@ class CameraController(MicroManagerHardwareController):
 
         # Set camera-specific parameters
         self.pixel_size_um = pixel_size_um
-        self.trigger_mode = 'software'
+        self.trigger_mode = trigger_mode
         self.trigger_pulse_width_us = 300
         self.setTriggerMode(self.trigger_mode)
         self.line_time_us = 16.4
         self.min_exposure_time = 0.01 # Defined by testing (datasheet seems to be wrong...)
         self.min_frame_dt_s = 1 / 50 # Defined by testing (datasheet seems to be wrong...) [0.41 for fast scan, 0.6 for slow scan]
+        self.trigger_mode
 
         # Get color settings
         if bayer_coupling_matrix is not None:
