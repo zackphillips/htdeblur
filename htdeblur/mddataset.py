@@ -1,11 +1,12 @@
 from comptic.containers import Dataset
 import llops as yp
 import numpy as np
+import copy
 
 class MotionDeblurDataset(Dataset):
     """ A subclass of the comptic dataset with motion deblur specific functions"""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, use_first_illumination_sequence_as_template=True, *args, **kwargs):
         """This class implements motion-deblur specific changes and fixes."""
         super(self.__class__, self).__init__(*args, **kwargs)
 
@@ -15,10 +16,15 @@ class MotionDeblurDataset(Dataset):
         # Instantiate variables
         self._frame_segment_list = None
 
+        # indicate whether we use the first illumination sequence as a template
+        self.use_first_illumination_sequence_as_template = use_first_illumination_sequence_as_template
+
+        self.frame_state_list_is_expanded = False
+
 
     def fixOldMdDatasets(self):
         # Expand frame_state_list
-        self.expandFrameStateList(self.frame_state_list, position_units='mm')
+        self.expandFrameStateList( position_units='mm')
 
         # Fix frame state list
         self.fixFrameStateList(self.frame_state_list)
@@ -86,41 +92,47 @@ class MotionDeblurDataset(Dataset):
 
         return frame_segment_direction_list
 
-    def expandFrameStateList(self, frame_state_list, position_units='mm'):
+    def expandFrameStateList(self, position_units='mm'):
         """ This function expands redundant information in the frame_state_list of a dataset (specific to motion deblur datasets for now)"""
 
-        # Store first frame as a datum
-        frame_state_0 = frame_state_list[0]
+        if not self.frame_state_list_is_expanded:
 
-        # Loop over frame states
-        for frame_state in frame_state_list:
+            frame_state_list = self.frame_state_list
 
-            # Fill in illumination and position if this frame state is compressed
-            if type(frame_state['illumination']) is str:
-                frame_state['illumination'] = copy.deepcopy(frame_state_0['illumination'])
+            # Store first frame as a datum
+            frame_state_0 = frame_state_list[0]
 
-                # Deterime direction of scan
-                dx0 = frame_state['position']['states'][-1][0]['value']['x'] - frame_state['position']['states'][0][0]['value']['x']
-                dy0 = frame_state['position']['states'][-1][0]['value']['y'] - frame_state['position']['states'][0][0]['value']['y']
-                direction = np.asarray((dy0, dx0))
-                direction /= np.linalg.norm(direction)
+            # Loop over frame states
+            for frame_state in frame_state_list:
 
-                # Get frame spacing
-                spacing = frame_state['position']['common']['velocity'] * frame_state['position']['common']['led_update_rate_us'] / 1e6
-                dy = direction[0] * spacing
-                dx = direction[1] * spacing
+                # Fill in illumination and position if this frame state is compressed
+                if type(frame_state['illumination']) is str:
+                    frame_state['illumination'] = copy.deepcopy(frame_state_0['illumination'])
 
-                # Assign new positions in state_list
-                states_new = []
-                for state_index in range(len(frame_state_0['position']['states'])):
-                    state = copy.deepcopy(frame_state['position']['states'][0])
-                    state[0]['time_index'] = state_index
-                    state[0]['value']['x'] += dx * state_index
-                    state[0]['value']['y'] += dy * state_index
-                    state[0]['value']['units'] = position_units
-                    states_new.append(state)
+                    # Deterime direction of scan
+                    dx0 = frame_state['position']['states'][-1][0]['value']['x'] - frame_state['position']['states'][0][0]['value']['x']
+                    dy0 = frame_state['position']['states'][-1][0]['value']['y'] - frame_state['position']['states'][0][0]['value']['y']
+                    direction = np.asarray((dy0, dx0))
+                    direction /= np.linalg.norm(direction)
 
-                frame_state['position']['states'] = states_new
+                    # Get frame spacing
+                    spacing = frame_state['position']['common']['velocity'] * frame_state['position']['common']['led_update_rate_us'] / 1e6
+                    dy = direction[0] * spacing
+                    dx = direction[1] * spacing
+
+                    # Assign new positions in state_list
+                    states_new = []
+                    for state_index in range(len(frame_state_0['position']['states'])):
+                        state = copy.deepcopy(frame_state['position']['states'][0])
+                        state[0]['time_index'] = state_index
+                        state[0]['value']['x'] += dx * state_index
+                        state[0]['value']['y'] += dy * state_index
+                        state[0]['value']['units'] = position_units
+                        states_new.append(state)
+
+                    frame_state['position']['states'] = states_new
+
+        self.frame_state_list_is_expanded = True
 
     def fixFrameStateList(self, frame_state_list, major_axis='y'):
         """Catch-all function for various hacks and dataset incompatabilities."""
@@ -494,8 +506,8 @@ class MotionDeblurDataset(Dataset):
                             frame_offset_list[frame_index][i] += frame_offset_list_segment[index][i]
 
             if segment_registration_mode is not None:
-                from ndoperators import VecStack, Segmentation
-                from libwallerlab.projects.motiondeblur.recon import alignRoiListToOrigin, register_roi_list
+                from llops.operators import VecStack, Segmentation
+                from htdeblur.recon import alignRoiListToOrigin, register_roi_list
                 stitched_segment_list, stitched_segment_roi_list = [], []
                 # Stitch segments
                 for segment_index in self.frame_segment_list_full:

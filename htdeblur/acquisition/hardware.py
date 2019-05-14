@@ -205,6 +205,7 @@ class LedArrayController(IlluminateController):
         self.accepts_preload = True
         self.does_trigger_camera = False
         self.state_sequence = None
+        self.trigger_mode = 'software'
 
         super(self.__class__, self).__init__(com_port, baud_rate)
 

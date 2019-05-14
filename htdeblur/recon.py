@@ -9,6 +9,8 @@ import os
 from comptic.imaging import pupil, otf
 from comptic import registration, containers
 
+from . import blurkernel
+
 # Llops imports
 import llops.operators as ops
 import llops as yp
@@ -93,9 +95,13 @@ class Reconstruction():
         # Get frame_segment_list
         self.frame_segment_list = self.dataset.frame_segment_list
 
+        # If the dataset uses a template illumination sequence, use this
+        if self.dataset.use_first_illumination_sequence_as_template:
+            self.dataset.expandFrameStateList()
+
         # Read blur kernel info
         self.blur_vector_list, self.blur_vector_roi_list = self.dataset.blur_vectors(corrections=kernel_corrections,
-                                                                                                  use_phase_ramp=self.use_phase_ramp_for_blur_vectors)
+                                                                                     use_phase_ramp=self.use_phase_ramp_for_blur_vectors)
 
         # Define object_true
         self.object_true = None
@@ -1638,7 +1644,7 @@ def normalize_measurements(dataset, blur_axis=1, decimation_factor=8, flatten_fi
                            debug=False, polynomial_order=1):
     stitched_segment_list, stitched_segment_roi_list, edge_normalization_factors_list = [], [], []
     segment_frame_roi_list = []
-    for segment_index in dataset.frame_segment_list_full: 
+    for segment_index in dataset.frame_segment_list_full:
         # Set segment index
         dataset.frame_segment_list = [segment_index]
 
