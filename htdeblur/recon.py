@@ -6,7 +6,7 @@ import skimage
 import os
 
 # Comptic imports
-from comptic.imaging import pupil
+from comptic.imaging import pupil, otf
 from comptic import registration, containers
 
 # Llops imports
@@ -91,10 +91,10 @@ class Reconstruction():
         self.pad_with_adjacent_measurements = pad_with_adjacent_measurements
 
         # Get frame_segment_list
-        self.frame_segment_list = self.dataset.motiondeblur.frame_segment_list
+        self.frame_segment_list = self.dataset.frame_segment_list
 
         # Read blur kernel info
-        self.blur_vector_list, self.blur_vector_roi_list = self.dataset.motiondeblur.blur_vectors(corrections=kernel_corrections,
+        self.blur_vector_list, self.blur_vector_roi_list = self.dataset.blur_vectors(corrections=kernel_corrections,
                                                                                                   use_phase_ramp=self.use_phase_ramp_for_blur_vectors)
 
         # Define object_true
@@ -110,7 +110,7 @@ class Reconstruction():
             self.psf = None
 
         # Determine segment directions
-        self.frame_segment_direction_list = [d[1] > 0 for d in dataset.motiondeblur.frame_segment_direction_list]
+        self.frame_segment_direction_list = [d[1] > 0 for d in dataset.frame_segment_direction_list]
 
         # Generate ROI objects
         self._genRoiObjects()
@@ -820,7 +820,7 @@ class Reconstruction():
             np.savez(output_filename_full,
                      object_recovered=self.object_recovered,
                      y=self.y,
-                     segment_index=self.dataset.motiondeblur.position_segment_indicies[0],
+                     segment_index=self.dataset.frame_segment_list[0],
                      roi=(sum(self.roi_list) + self.roi_start_global).__dict__)
 
             print('Saved .npz file to %s.npz' % output_filename_full)
@@ -1016,7 +1016,7 @@ class Reconstruction():
         shape = self.dataset.frame_shape
         wavelength = self.dataset.metadata.illumination.spectrum.center['w']
 
-        self.psf = yp.iFt(pupil.otf(shape, pixel_size, wavelength, na, dtype=self.dtype, backend=self.backend))
+        self.psf = yp.iFt(otf(shape, pixel_size, wavelength, na, dtype=self.dtype, backend=self.backend))
         self.psf /= yp.abs(yp.scalar(yp.sum(self.psf)))
         self.psf = yp.cast(self.psf, self.dtype, self.backend)
 
@@ -1633,19 +1633,20 @@ def estimateBackgroundPolynomial(frame, polynomial_order=1, downsample=32, debug
     # Return
     return flat_field
 
+# TODO move this into mddataset!
 def normalize_measurements(dataset, blur_axis=1, decimation_factor=8, flatten_field=False,
                            debug=False, polynomial_order=1):
     stitched_segment_list, stitched_segment_roi_list, edge_normalization_factors_list = [], [], []
     segment_frame_roi_list = []
-    for segment_index in dataset.motiondeblur.position_segment_indicies_full:
+    for segment_index in dataset.frame_segment_list_full: 
         # Set segment index
-        dataset.motiondeblur.position_segment_indicies = [segment_index]
+        dataset.frame_segment_list = [segment_index]
 
         # Load measurement list
         measurement_list = [yp.filter.decimate(dataset.frame_list[index], decimation_factor) for index in range(len(dataset.frame_mask))]
 
         # Get ROI list from dataset metadata
-        roi_list_measurements = [roi.copy() for roi in dataset.motiondeblur.roi_list]
+        roi_list_measurements = [roi.copy() for roi in dataset.roi_list]
 
         # Apply registration if provided
         if 'registration' in dataset.metadata.calibration:

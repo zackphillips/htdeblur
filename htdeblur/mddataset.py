@@ -216,7 +216,7 @@ class MotionDeblurDataset(Dataset):
             if 'illumination' in frame_state:
                 illumination_list_frame = []
                 if type(frame_state['illumination']) is str:
-                    illum_state_list = self.frame_state_list[0]['illumination']['states']
+                    illum_state_list = self._frame_state_list[0]['illumination']['states']
                 else:
                     illum_state_list = frame_state['illumination']['states']
                 for time_point in illum_state_list:
