@@ -494,8 +494,8 @@ class MotionDeblurDataset(Dataset):
                             frame_offset_list[frame_index][i] += frame_offset_list_segment[index][i]
 
             if segment_registration_mode is not None:
-                from ndoperators import VecStack, Segmentation
-                from libwallerlab.projects.motiondeblur.recon import alignRoiListToOrigin, register_roi_list
+                from llops.operators import VecStack, Segmentation
+                from htdeblur.recon import alignRoiListToOrigin, register_roi_list
                 stitched_segment_list, stitched_segment_roi_list = [], []
                 # Stitch segments
                 for segment_index in self.frame_segment_list_full:
