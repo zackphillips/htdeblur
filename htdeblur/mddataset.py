@@ -308,12 +308,12 @@ class MotionDeblurDataset(Dataset):
         for frame_index in range(dataset.shape[0]):
             #  Generate blur vectors
             if use_phase_ramp:
-                import ndoperators as ops
+                from llops.operators import PhaseRamp
                 kernel_shape = [yp.fft.next_fast_len(max(sh, 1)) for sh in blur_vector_roi_list[frame_index].shape]
                 offset = yp.cast([sh // 2 + st for (sh, st) in zip(kernel_shape, blur_vector_roi_list[frame_index].start)], 'complex32', dataset.backend)
 
                 # Create phase ramp and calculate offset
-                R = ops.PhaseRamp(kernel_shape, dtype='complex32', backend=dataset.backend)
+                R = PhaseRamp(kernel_shape, dtype='complex32', backend=dataset.backend)
 
                 # Generate blur vector
                 blur_vector = yp.zeros(R.M, dtype='complex32', backend=dataset.backend)

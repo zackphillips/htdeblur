@@ -1429,6 +1429,7 @@ def flattenFrameBackground(frame, polynomial_order=2, debug=False):
 
     # Convert to numpy backend
     original_backend = yp.getBackend(frame)
+    original_dtype = yp.getDatatype(frame)
     frame = yp.changeBackend(frame, 'numpy')
 
     # Define data as projections onto each axis
@@ -1451,6 +1452,7 @@ def flattenFrameBackground(frame, polynomial_order=2, debug=False):
 
     # Convert back to origional backend
     bg = yp.changeBackend(bg, original_backend)
+    bg = yp.astype(bg, new_dtype=original_dtype)
 
     # Print debugging information
     if debug:
