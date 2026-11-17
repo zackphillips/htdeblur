@@ -1,7 +1,7 @@
 import numpy as np
 from . import blurkernel
 import scipy
-import scipy.misc
+import scipy.special
 #from numba import jit
 
 
@@ -262,7 +262,7 @@ class kernel_objectives(object):
         Returns:
             approximated minimum element of x
         """
-        return -scipy.misc.logsumexp(-x*smoothing) / smoothing
+        return -scipy.special.logsumexp(-x*smoothing) / smoothing
 
     @staticmethod
     def gradSmoothMin(x, smoothing):

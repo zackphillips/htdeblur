@@ -69,14 +69,14 @@ class StopAndStareAcquisition():
 
         # First add hardware triggered elements so they perform their set-up before we trigger software elements
         for controller in hardware_controller_list:
-            if controller.trigger_mode is 'hardware':
+            if controller.trigger_mode == 'hardware':
                 self.hardware_controller_list[controller.type] = controller
                 controller.reset()
                 controller.seq_clear()
 
         # Then, add software triggered elements
         for controller in hardware_controller_list:
-            if controller.trigger_mode is 'software':
+            if controller.trigger_mode == 'software':
                 self.hardware_controller_list[controller.type] = controller
                 controller.reset()
                 controller.seq_clear()
@@ -225,7 +225,7 @@ class StopAndStareAcquisition():
 
         # Detemine number of measurements
         measurement_count = np.ceil(np.asarray(object_size_mm) / np.asarray(frame_spacing_mm)
-                                    ).astype(np.int)  # two components in x and y
+                                    ).astype(int)  # two components in x and y
 
         # Determine slightly smaller frame spacing for optimal coverage of object
         frame_spacing_mm = (object_size_mm[0] / measurement_count[0], object_size_mm[1] / measurement_count[1])
@@ -457,7 +457,7 @@ class MotionDeblurAcquisition():
         # First add hardware triggered elements so they perform their set-up before we trigger software elements
         for controller in hardware_controller_list:
             if hasattr(controller, 'trigger_mode'):
-                if controller.trigger_mode is 'hardware':
+                if controller.trigger_mode == 'hardware':
                     self.hardware_controller_list[controller.type] = controller
                     controller.reset()
                     controller.seq_clear()
@@ -544,14 +544,14 @@ class MotionDeblurAcquisition():
                 hardware_controller.reset()
 
                 # Get number of frames in sequence. If there is no sequence, remove this element from hw_controller_list
-                if hardware_controller.type is not 'camera':
+                if hardware_controller.type != 'camera':
                     if hardware_controller.state_sequence is not None:
                         frame_counts.append(len(hardware_controller.state_sequence))
                     else:
                         self.hardware_controller_list.pop(hardware_controller_name)
             else:
                 # Remove this controller from the list
-                if hardware_controller_name is not 'camera':
+                if hardware_controller_name != 'camera':
                     del self.hardware_controller_list[hardware_controller_name]
 
         # Turn on hardware triggering for initialization
@@ -688,7 +688,7 @@ class MotionDeblurAcquisition():
             for frame_index in self.frames_to_acquire:
                 number_of_states_in_current_frame = 0
                 for hardware_controller_name in self.hardware_controller_list:
-                    if hardware_controller_name is not 'camera' and self.hardware_controller_list[hardware_controller_name].state_sequence is not None:
+                    if hardware_controller_name != 'camera' and self.hardware_controller_list[hardware_controller_name].state_sequence is not None:
                         # Check if this frame can be preloaded (if it has more than one state, it can't be preloaded)
                         number_of_states_in_current_frame = max(number_of_states_in_current_frame,  len(
                             self.hardware_controller_list[hardware_controller_name].state_sequence[frame_index]['states']))
@@ -876,8 +876,8 @@ class MotionDeblurAcquisition():
                         # no delay for other components
                         self.hardware_controller_list[hardware_controller_name].trigger_start_delay_s = 0
 
-                    if hardware_controller_name is not 'camera' and self.hardware_controller_list[hardware_controller_name].state_sequence is not None:
-                        if hardware_controller_name is not 'illumination' or linear_segment_index == 0:
+                    if hardware_controller_name != 'camera' and self.hardware_controller_list[hardware_controller_name].state_sequence is not None:
+                        if hardware_controller_name != 'illumination' or linear_segment_index == 0:
                             if hardware_controller_name == 'illumination' and self.reuse_illumination_sequence:
                                 self.hardware_controller_list[hardware_controller_name].preloadSequence(0)
                             else:
@@ -946,7 +946,7 @@ class MotionDeblurAcquisition():
 
             # Reset sequences
             for hardware_controller_name in self.hardware_controller_list:
-                if hardware_controller_name is not 'camera':
+                if hardware_controller_name != 'camera':
                     self.hardware_controller_list[hardware_controller_name].sequenceReset()
 
             # Let user know we're finished
@@ -1027,10 +1027,10 @@ class MotionDeblurAcquisition():
         '''
         This function generates a few example motion pathways.
         '''
-        if pathway_type is 'raster':
+        if pathway_type == 'raster':
             pathway = self.genMotionPathwayRaster(self.object_size_mm, self.frame_spacing_mm)
 
-        elif (pathway_type is 'linear') or (pathway_type is 'linear_x'):
+        elif (pathway_type == 'linear') or (pathway_type == 'linear_x'):
             # predefine linear y sequence
             n_frames = int(math.ceil(self.object_size_mm[1] / self.frame_spacing_mm[1]))
             pathway = []
@@ -1048,7 +1048,7 @@ class MotionDeblurAcquisition():
                                 'y_end':  -(frame_index + 1) * self.frame_spacing_mm[0],
                                 'x_start': 0, 'x_end': 0, 'linear_segment_index': 0})
 
-        elif pathway_type is 'linear_diag':
+        elif pathway_type == 'linear_diag':
             # predefine linear y sequence
             n_frames = int(np.ceil(self.object_size_mm[0] / self.frame_spacing_mm[0]))
             pathway = []
@@ -1219,7 +1219,7 @@ class MotionDeblurAcquisition():
         _major_axis = 1
 
         # Detemine number of measurements
-        measurement_count = np.ceil(np.asarray(object_size_mm) / np.asarray(frame_spacing_mm)).astype(np.int)  # two components in x and y
+        measurement_count = np.ceil(np.asarray(object_size_mm) / np.asarray(frame_spacing_mm)).astype(int)  # two components in x and y
 
         # Error checking
         assert np.any(measurement_count > 1), "image_size must be smaller than object_size!"

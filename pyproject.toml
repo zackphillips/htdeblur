@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "htdeblur"
+version = "0.0.2"
+description = "High-throughput imaging using motion deblur"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Zack Phillips" }, { name = "Sarah Dean" }]
+# Archived research code: pinned to the last numpy 1.x line. Not tested on numpy 2.
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "numpy>=1.24,<2",
+    "scipy>=1.10,<1.14",
+    "matplotlib>=3.7,<3.10",
+    "scikit-image>=0.21,<0.25",
+    "tifffile",
+    # Not on PyPI; install manually (see README): llops, comptic
+]
+
+[project.optional-dependencies]
+# Hardware control (htdeblur.acquisition). Also needs `illuminate` and Micro-Manager (MMCorePy).
+acquisition = ["pyserial", "matplotlib-scalebar"]
+# Interactive kernel plots in blurkernel.py
+plotly = ["plotly"]
+notebooks = ["jupyter"]
+
+[tool.setuptools.packages.find]
+include = ["htdeblur*"]

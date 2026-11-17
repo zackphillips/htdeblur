@@ -201,7 +201,7 @@ class MotionDeblurDataset(Dataset):
         dataset = self
 
         # Get corrections from metadata
-        if len(corrections) is 0 and 'blur_vector' in self.metadata.calibration:
+        if len(corrections) == 0 and 'blur_vector' in self.metadata.calibration:
             corrections = dataset.metadata.calibration['blur_vector']
 
         # Get datatype and backends
