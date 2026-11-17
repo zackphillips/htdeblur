@@ -1,6 +1,6 @@
 # htdeblur: high-throughput imaging using motion deblur
 
-**Status: archived research code (last active development 2019).** The code is kept for reference and figure reproduction. It is not maintained, and the API will not change.
+**Status: archived research code (last active development 2019).** Code for [Phillips et al., *Biomed. Opt. Express* 11(1), 2020](https://doi.org/10.1364/BOE.11.000281). The code is kept for reference and figure reproduction. It is not maintained, and the API will not change.
 
 ## Layout
 
@@ -67,6 +67,23 @@ The notebooks in `notebooks/publications/` were run on the authors' machines. Be
 | `fig_limiting_analysis_sarah.ipynb`, `_zack.ipynb` | `libwallerlab` | earlier variants of `fig_limiting_analysis` |
 
 Notebooks that import `libwallerlab` need porting to `htdeblur` imports before they will run against this package.
+
+## Citation
+
+Z. F. Phillips, S. Dean, B. Recht, and L. Waller, "High-throughput fluorescence microscopy using multi-frame motion deblurring," *Biomedical Optics Express* 11(1), 281–300 (2020). https://doi.org/10.1364/BOE.11.000281
+
+```bibtex
+@article{phillips2020htdeblur,
+  author  = {Phillips, Zachary F. and Dean, Sarah and Recht, Benjamin and Waller, Laura},
+  title   = {High-throughput fluorescence microscopy using multi-frame motion deblurring},
+  journal = {Biomedical Optics Express},
+  volume  = {11},
+  number  = {1},
+  pages   = {281--300},
+  year    = {2020},
+  doi     = {10.1364/BOE.11.000281}
+}
+```
 
 ## License
 

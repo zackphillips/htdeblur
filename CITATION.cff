@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the article below."
+title: "htdeblur: high-throughput imaging using motion deblur"
+type: software
+license: BSD-3-Clause
+repository-code: "https://github.com/zackphillips/htdeblur"
+authors:
+  - family-names: Phillips
+    given-names: Zachary F.
+  - family-names: Dean
+    given-names: Sarah
+preferred-citation:
+  type: article
+  title: "High-throughput fluorescence microscopy using multi-frame motion deblurring"
+  authors:
+    - family-names: Phillips
+      given-names: Zachary F.
+    - family-names: Dean
+      given-names: Sarah
+    - family-names: Recht
+      given-names: Benjamin
+    - family-names: Waller
+      given-names: Laura
+  journal: "Biomedical Optics Express"
+  volume: 11
+  issue: 1
+  start: 281
+  end: 300
+  year: 2020
+  doi: "10.1364/BOE.11.000281"

@@ -8,7 +8,7 @@ version = "0.0.2"
 description = "High-throughput imaging using motion deblur"
 readme = "README.md"
 license = { file = "LICENSE" }
-authors = [{ name = "Zack Phillips" }, { name = "Sarah Dean" }]
+authors = [{ name = "Zachary F. Phillips" }, { name = "Sarah Dean" }]
 # Archived research code: pinned to the last numpy 1.x line. Not tested on numpy 2.
 requires-python = ">=3.10,<3.13"
 dependencies = [
