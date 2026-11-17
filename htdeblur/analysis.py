@@ -454,7 +454,7 @@ def acquisitionParameters(acquisition_strategy, camera_frame_rate=10, debug=True
         return (0, 0, 0, 0, 0, (0, 0), 0)
 
     # Ensure strobe time isn't too fast for hardware
-    if pulse_time < 1 / illumination_rep_rate and acquisition_strategy is not 'stop_and_stare':
+    if pulse_time < 1 / illumination_rep_rate and acquisition_strategy != 'stop_and_stare':
         if debug:
             print('Necessary pulse time (%g s) exceeds min pulse time (%g s))' % (pulse_time, 1 / illumination_rep_rate))
         return (0, 0, 0, 0, 0, (0, 0), 0)
@@ -898,8 +898,8 @@ def make2DPlots(snr_coded_list,
 
     elif 'regions' in plot_type:
 
-        imshow_array = argmax_array.astype(np.float)
-        imshow_array += (max_array > 0).astype(np.float)
+        imshow_array = argmax_array.astype(float)
+        imshow_array += (max_array > 0).astype(float)
         log_colors = False
 
     if 'regions' in plot_type:

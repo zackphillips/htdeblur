@@ -21,12 +21,21 @@ import os, sys
 # from libwallerlab.utilities import io
 # from libwallerlab.utilities import display
 # from libwallerlab.utilities import roi
-import serial
 import json
 import llops as yp
 from llops import Roi
 import comptic
-from illuminate import IlluminateController
+
+# Hardware-only dependencies. Install with `pip install htdeblur[acquisition]`;
+# Micro-Manager (MMCorePy) must be installed separately.
+try:
+    import serial
+    from illuminate import IlluminateController
+except ImportError as e:
+    raise ImportError(
+        "htdeblur.acquisition.hardware requires the acquisition extras "
+        "(pyserial, illuminate). Install with `pip install htdeblur[acquisition]`."
+    ) from e
 
 # Custom scale bar object
 from matplotlib_scalebar.scalebar import ScaleBar
@@ -411,7 +420,7 @@ class PositionController(HardwareController):
         self.velocity = (self.state_sequence_preload_common['velocity'])
 
         # If the stage uses software triggering, send commands directly, otherwise just enable triggering
-        if self.trigger_mode is 'software':
+        if self.trigger_mode == 'software':
             # Loop over remaining positions
             for (idx, position) in enumerate(self.state_sequence_preload):
 
@@ -792,7 +801,7 @@ class CameraController(MicroManagerHardwareController):
             self.is_color = False
 
         # Set up pixel rate for pco
-        if self.device_name is 'pco':
+        if self.device_name == 'pco':
             # Ensure we're in global shutter mode
             assert 'global' in self.mmc.getProperty('pco', 'CameraType').lower(), 'Camera is not in global shutter mode! Set this in the PCO software (Camera -> Setup menu item in the top bar).'
 
@@ -809,7 +818,7 @@ class CameraController(MicroManagerHardwareController):
                 pass
 
             self.mmc.setProperty(self.device_name,'Signal 1 (Exposure Trigger) Polarity', 'rising')
-        elif self.device_name is "optimos":
+        elif self.device_name == "optimos":
             # Disable all FPGA processing
             self.mmc.setProperty(self.device_name, "PP  1   ENABLED:", "No")
             self.mmc.setProperty(self.device_name, "PP  2   ENABLED:", "No")
@@ -913,7 +922,7 @@ class CameraController(MicroManagerHardwareController):
         frame_list = np.zeros((self.getBufferSizeFrames(), self.getImageHeight(), self.getImageWidth()), dtype=np.uint16)
         for img_idx in range(frame_list.shape[0]):
             if img_bg is not None:
-                frame_list[img_idx,:,:] = np.max(self.mmc.popNextImageMD(md).copy().astype(np.int) - img_bg).astype(np.uint16)
+                frame_list[img_idx,:,:] = np.max(self.mmc.popNextImageMD(md).copy().astype(int) - img_bg).astype(np.uint16)
             else:
                 frame_list[img_idx,:,:] = self.mmc.popNextImageMD(md).copy()
             elapsed_frame_time.append(float(md.GetSingleTag("ElapsedTime-ms").GetValue()))
@@ -1001,9 +1010,9 @@ class CameraController(MicroManagerHardwareController):
                     else:
                         im.set_data(img)
 
-                    if contrast_type is "tight":
+                    if contrast_type == "tight":
                         im.set_clim(np.mean(img) * contrast_tight_factor, np.mean(img) * (1/contrast_tight_factor))
-                    elif contrast_type is "fit":
+                    elif contrast_type == "fit":
                         im.set_clim(np.amin(img), np.amax(img))
                     else:
                         im.set_clim(0,2**16 - 1)

@@ -1143,7 +1143,7 @@ def get_cost_function(objective, reg_types, dtype=None):
 def subtract_lowpass(frame_list, sigma=100, show=False):
     for i in range(len(frame_list)):
         plot_object = np.abs(frame_list[i])
-        plot_object = plot_object.astype(np.float)
+        plot_object = plot_object.astype(float)
         plot_object = skimage.exposure.adjust_log(plot_object)
 
         plot_object -= skimage.filters.gaussian(plot_object, sigma=100)
@@ -1276,7 +1276,7 @@ def register_roi_list(measurement_list, roi_list, axis=None,
     # Determine aggrigate offsets
     aggrigate_offsets = [offsets[0]]
     for offset_index in range(len(offsets) - 1):
-        aggrigate_offsets.append(sum(offsets[slice(0, offset_index + 2)]).astype(np.int).tolist())
+        aggrigate_offsets.append(sum(offsets[slice(0, offset_index + 2)]).astype(int).tolist())
 
     # Return the recovered offsets
     return aggrigate_offsets

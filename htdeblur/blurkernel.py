@@ -430,7 +430,7 @@ def cropAndCenterKernel(kernel_recovered, kernel_size):
 
     # Center at middle of blur kernel
     p = np.where(kernel_zeroed > 0)
-    kernel_centered = np.roll(kernel_zeroed, -np.round(np.asarray((np.mean(p[0]), np.mean(p[1]))) + np.asarray(kernel_zeroed.shape) // 2).astype(np.int))
+    kernel_centered = np.roll(kernel_zeroed, -np.round(np.asarray((np.mean(p[0]), np.mean(p[1]))) + np.asarray(kernel_zeroed.shape) // 2).astype(int))
 
     kernel_size_small = kernel_size //2
 
@@ -483,7 +483,7 @@ def genSamplingComb(object_size, image_size, dtype=np.complex64):
     sampling = np.floor(((np.asarray(object_size) / 2) / np.asarray(image_size)))
     sampling_comb = np.zeros(object_size, dtype=dtype)
     yy, xx = np.meshgrid(np.arange(-sampling[0], sampling[0] + 1), np.arange(-sampling[1], sampling[1] + 1))
-    positions_0 = np.hstack((yy.ravel()[:, np.newaxis], xx.ravel()[:, np.newaxis])).astype(np.int)
+    positions_0 = np.hstack((yy.ravel()[:, np.newaxis], xx.ravel()[:, np.newaxis])).astype(int)
     positions = np.zeros(positions_0.shape, dtype=positions_0.dtype)
     positions[:, 0] = object_size[0] // 2 + positions_0[:, 0] * image_size[0]
     positions[:, 1] = object_size[1] // 2 + positions_0[:, 1] * image_size[1]
@@ -794,15 +794,15 @@ def getAutocalibrationFns(y, object_size, illums, basis_y, basis_x, weights_init
 
 
 def tand(x):
-    return np.float(np.tan(x * np.pi / 180))
+    return float(np.tan(x * np.pi / 180))
 
 
 def sind(x):
-    return np.float(np.sin(x * np.pi / 180))
+    return float(np.sin(x * np.pi / 180))
 
 
 def cosd(x):
-    return np.float(np.cos(x * np.pi / 180))
+    return float(np.cos(x * np.pi / 180))
 
 
 def dnf2snr(dnf, exposureUnits, exposureCountsPerUnit=6553, darkCurrentE=0.9, patternNoiseE=3.9, readoutNoiseE=2.5, cameraBits=16, fullWellCapacity=30000):
@@ -1048,14 +1048,14 @@ def genRasterMotionPathwayOld(object_size, image_size, full_object_multi_pass=0,
         image_size = np.flip(image_size, 0)
 
     measurement_count = np.ceil(np.asarray(object_size) / np.asarray(image_size)
-                                ).astype(np.int)  # two components in x and y
+                                ).astype(int)  # two components in x and y
 
     assert np.any(measurement_count > 1), "image_size must be smaller than object_size!"
     print("Image size requires %d x %d images" % (measurement_count[0], measurement_count[1]))
 
     measurement_count[1] = int(measurement_redundancy * measurement_count[1])
 
-    raster_segments = np.zeros((measurement_count[0] * 2, 2), dtype=np.int)
+    raster_segments = np.zeros((measurement_count[0] * 2, 2), dtype=int)
 
     y_stride = object_size[0] / measurement_count[0]
     x_stride = object_size[1] / measurement_count[1]
@@ -1187,14 +1187,14 @@ def genRasterMotionPathway(object_size, image_size, corner_gen_fn=gen90Corner, f
         image_size = np.flip(image_size, 0)
 
     measurement_count = np.ceil(np.asarray(object_size) / np.asarray(image_size)
-                                ).astype(np.int)  # two components in x and y
+                                ).astype(int)  # two components in x and y
 
     assert np.any(measurement_count > 1), "image_size must be smaller than object_size!"
     print("Image size requires %d x %d images" % (measurement_count[0], measurement_count[1]))
 
     measurement_count[1] = int(measurement_redundancy * measurement_count[1])
 
-    raster_segments = np.zeros((measurement_count[0] * 2, 2), dtype=np.int)
+    raster_segments = np.zeros((measurement_count[0] * 2, 2), dtype=int)
 
     y_stride = object_size[0] / measurement_count[0]
     x_stride = object_size[1] / measurement_count[1]
@@ -1332,14 +1332,14 @@ def genLinearRasterMotionPathway(object_size, image_size, full_object_multi_pass
         object_size = np.flip(object_size, 0)
         image_size = np.flip(image_size, 0)
 
-    measurement_count = np.ceil(object_size / image_size).astype(np.int)  # two components in x and y
+    measurement_count = np.ceil(object_size / image_size).astype(int)  # two components in x and y
 
     assert np.any(measurement_count > 1), "image_size must be smaller than object_size!"
     print("Image size requires %d x %d images" % (measurement_count[0], measurement_count[1]))
 
     measurement_count[1] = int(measurement_redundancy * measurement_count[1])
 
-    raster_segments = np.zeros((measurement_count[0] * 2, 2), dtype=np.int)
+    raster_segments = np.zeros((measurement_count[0] * 2, 2), dtype=int)
 
     y_stride = object_size[0] / measurement_count[0]
     x_stride = object_size[1] / measurement_count[1]
@@ -1475,12 +1475,12 @@ def genRasterMotionPathway_fallback(object_size, image_size, full_object_multi_p
         A 2D ndarray where each value is it's index in the input blur_kernel_map
     """
 
-    measurement_count = np.ceil(object_size / image_size).astype(np.int)  # two components in x and y
+    measurement_count = np.ceil(object_size / image_size).astype(int)  # two components in x and y
 
     assert np.any(measurement_count > 1), "image_size must be smaller than object_size!"
     print("Image size requires %d x %d images" % (measurement_count[0], measurement_count[1]))
 
-    raster_segments = np.zeros((measurement_count[0] * 2, 2), dtype=np.int)
+    raster_segments = np.zeros((measurement_count[0] * 2, 2), dtype=int)
 
     y_stride = object_size[0] / measurement_count[0]
     x_stride = object_size[1] / measurement_count[1]
@@ -1839,7 +1839,7 @@ def genIllum_GS(realSpaceSupport, fourierSpaceSupport, throughputCoeff=0.5,
 
     # DC Term in Fourier Space
     dc = np.zeros(image_size, dtype=np.double)
-    dc[np.ceil(image_size[0] / 2).astype(np.int), np.ceil(image_size[1] / 2).astype(np.int)] = (throughputCoeff * p) ** 2
+    dc[np.ceil(image_size[0] / 2).astype(int), np.ceil(image_size[1] / 2).astype(int)] = (throughputCoeff * p) ** 2
 
     maxPSD = p * (np.floor(throughputCoeff * p) + np.remainder(throughputCoeff * p, 1.0)
                   ** 2)  # max power spectrum in fourier domain
