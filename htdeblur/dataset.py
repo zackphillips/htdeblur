@@ -589,10 +589,10 @@ class Dataset():
 
         # Load background and dark current
         for tif_filename in tif_list:
-            if 'background' in tif_filename or 'bg' in tif_filename:
+            if 'background' in os.path.basename(tif_filename) or 'bg' in os.path.basename(tif_filename):
                 self.background = ut.cast(readMultiPageTiff(tif_filename)[0],
                                           dtype=self.dtype)
-            elif 'dark_current' in tif_filename:
+            elif 'dark_current' in os.path.basename(tif_filename):
                 self.dark_current = ut.cast(readMultiPageTiff(tif_filename)[0],
                                             dtype=self.dtype)
 
@@ -614,7 +614,7 @@ class Dataset():
 
         # Load frame from disk
         for tif_filename in tif_list:
-            if 'background' not in tif_filename and 'dark_current' not in tif_filename:
+            if 'background' not in os.path.basename(tif_filename) and 'dark_current' not in os.path.basename(tif_filename):
                 frame = ut.cast(np.squeeze(readMultiPageTiff(tif_filename, frame_subset=[frame_index])[0]),
                                 dtype=self.dtype)
 
@@ -661,7 +661,7 @@ class Dataset():
         print('Loading %d frames...' % len(frame_mask))
 
         for tif_filename in tif_list:
-            if 'background' not in tif_filename and 'bg' not in tif_filename and 'dark_current' not in tif_filename:
+            if 'background' not in os.path.basename(tif_filename) and 'bg' not in os.path.basename(tif_filename) and 'dark_current' not in os.path.basename(tif_filename):
                 updated_frame_list = readMultiPageTiff(tif_filename, frame_subset=frame_mask)
 
         # Update new frames
@@ -704,14 +704,14 @@ class Dataset():
 
         # See if there are any tif files in directory
         for file in tiff_file_list:
-            if 'background' not in file and 'backup' not in file and 'dark_current' not in file:
-                if '.tif' in file:
+            if 'background' not in os.path.basename(file) and 'backup' not in os.path.basename(file) and 'dark_current' not in os.path.basename(file):
+                if '.tif' in os.path.basename(file):
                     tif_list.append(file)
 
         # See if there are any tif files in directory
         for file in tiff_file_list:
-            if 'calibration' not in file and 'backup' not in file:
-                if '.json' in file:
+            if 'calibration' not in os.path.basename(file) and 'backup' not in os.path.basename(file):
+                if '.json' in os.path.basename(file):
                     json_list.append(file)
 
         assert len(tif_list) == 1, "Could not find tif file in directory %s (Found %d files)" % (self.directory, len(tif_list))

@@ -192,8 +192,11 @@ def case_recon_init(htdeblur, out, path):
 
 
 def case_recon_solve(htdeblur, out, path):
-    for mode, reg in (('global', {'tv': 5e-4}), ('global', {'l2': 1e-3}), ('global', {}),
-                      ('global', {'l1': 1e-3}), ('static', {}), ('sequential', {'l2': 1e-3})):
+    # Regularization weights are chosen so FISTA's restart comparisons are well
+    # above float32 rounding; near-ties there make results depend on the CPU's
+    # summation order (e.g. tv=5e-4 ties at 7e-8 relative on iteration 3).
+    for mode, reg in (('global', {'tv': 0.5}), ('global', {'l2': 1e-3}), ('global', {}),
+                      ('global', {'l1': 10.0}), ('static', {}), ('sequential', {'l2': 1e-3})):
         recon = new_reconstruction(path)
         recon.reconstruct(iteration_count=8, step_size=0.5, mode=mode, reg_types=reg, display_type=None)
         key = 'rc_%s_%s' % (mode, '_'.join(sorted(reg)) or 'none')
