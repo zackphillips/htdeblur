@@ -18,7 +18,7 @@ dependencies = [
     "scikit-image>=0.21,<0.25",
     "tifffile>=2022.4",
     "imageio>=2.16",
-    # Not on PyPI; install manually (see README): llops
+    "pywavelets>=1.4",
 ]
 
 [project.optional-dependencies]
@@ -27,9 +27,15 @@ acquisition = ["pyserial", "matplotlib-scalebar"]
 # Interactive kernel plots in blurkernel.py
 plotly = ["plotly"]
 notebooks = ["jupyter"]
+test = ["pytest"]
 
 [tool.setuptools.packages.find]
 include = ["htdeblur*"]
 
 [tool.setuptools.package-data]
 htdeblur = ["resources/*.png"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+filterwarnings = ["ignore::DeprecationWarning:matplotlib.*"]

@@ -7,8 +7,7 @@ features ('orb'), with 'normalize' and 'highpass' preprocessing.
 
 import numpy as np
 import scipy.fft
-import llops as yp
-import llops.filter as filters
+from . import _util as ut
 from skimage.feature import ORB, match_descriptors
 from skimage.measure import ransac
 from skimage.transform import EuclideanTransform
@@ -22,46 +21,46 @@ def _preprocess(image0, image1, methods):
         raise ValueError('Unsupported preprocess methods %s (supported: %s)' % (sorted(unknown), _PREPROCESS_METHODS))
 
     if 'normalize' in methods:
-        image0 = filters._normalize(image0)
-        image1 = filters._normalize(image1)
+        image0 = ut.normalize01(image0)
+        image1 = ut.normalize01(image1)
 
     if 'highpass' in methods:
-        image0 = filters.gaussian(image0, sigma=2) - filters.gaussian(image0, sigma=4)
-        image1 = filters.gaussian(image1, sigma=2) - filters.gaussian(image1, sigma=4)
+        image0 = ut.gaussian(image0, sigma=2) - ut.gaussian(image0, sigma=4)
+        image1 = ut.gaussian(image1, sigma=2) - ut.gaussian(image1, sigma=4)
 
     return image0, image1
 
 
 def _register_xc(image0, image1, axis, trust_threshold):
     # Pad to an FFT-friendly size
-    pad_size = tuple(scipy.fft.next_fast_len(s) for s in yp.shape(image0))
-    if pad_size != tuple(yp.shape(image0)):
-        image0 = yp.pad(image0, pad_size, pad_value='edge', center=True)
-        image1 = yp.pad(image1, pad_size, pad_value='edge', center=True)
+    pad_size = tuple(scipy.fft.next_fast_len(s) for s in np.shape(image0))
+    if pad_size != tuple(np.shape(image0)):
+        image0 = ut.pad(image0, pad_size, pad_value='edge', center=True)
+        image1 = ut.pad(image1, pad_size, pad_value='edge', center=True)
 
-    src_freq, target_freq = yp.Ft(image0, axes=axis), yp.Ft(image1, axes=axis)
-    cross_correlation = yp.iFt(src_freq * yp.conj(target_freq), center=False, axes=axis)
+    src_freq, target_freq = ut.Ft(image0, axes=axis), ut.Ft(image1, axes=axis)
+    cross_correlation = ut.iFt(src_freq * np.conj(target_freq), center=False, axes=axis)
 
     # 1D registration: collapse the other axes
     if axis is not None:
-        axis_to_sum = list(range(yp.ndim(image1)))
+        axis_to_sum = list(range(np.ndim(image1)))
         del axis_to_sum[axis]
-        cross_correlation = yp.sum(cross_correlation, axis=axis_to_sum)
+        cross_correlation = ut.sum(cross_correlation, axis=axis_to_sum)
 
-    shape = yp.shape(src_freq)
-    maxima = yp.argmax(yp.abs(cross_correlation))
+    shape = np.shape(src_freq)
+    maxima = ut.argmax(np.abs(cross_correlation))
     midpoints = np.array([np.fix(axis_size / 2) for axis_size in shape])
 
     shifts = np.array(maxima, dtype=np.float64)
     shifts[shifts > midpoints] -= np.array(shape)[shifts > midpoints]
 
     # A singleton dimension carries no shift information
-    for dim in range(yp.ndim(src_freq)):
+    for dim in range(np.ndim(src_freq)):
         if shape[dim] == 1:
             shifts[dim] = 0
 
     # Peak-to-mean energy ratio of the correlation
-    trust_metric = yp.scalar(yp.max(yp.abs(cross_correlation) ** 2) / yp.mean(yp.abs(cross_correlation) ** 2))
+    trust_metric = ut.scalar(ut.max(np.abs(cross_correlation) ** 2) / ut.mean(np.abs(cross_correlation) ** 2))
     return shifts, trust_metric, trust_metric / trust_threshold
 
 

@@ -14,8 +14,8 @@ import os
 
 import numpy as np
 import tifffile
-import llops as yp
-from llops import Roi
+from . import _util as ut
+from .roi import Roi
 
 VERSION = 0.3
 
@@ -205,8 +205,8 @@ class Dataset():
         self.directory = dataset_path
 
         # Store dtype and backend
-        self.dtype = dtype if dtype is not None else yp.config.default_dtype
-        self.backend = backend if backend is not None else yp.config.default_backend
+        self.dtype = dtype if dtype is not None else ut.DEFAULT_DTYPE
+        self.backend = backend if backend is not None else 'numpy'
 
         # Initialize data
         self._frame_list = None
@@ -284,7 +284,7 @@ class Dataset():
     def frame_shape(self):
         """Returns dimensions of each frame in dataset."""
         if any([frame is not None for frame in self._frame_list]):
-            frame_shape = list(yp.shape([frame for frame in self._frame_list if frame is not None][0]))
+            frame_shape = list(np.shape([frame for frame in self._frame_list if frame is not None][0]))
 
             if self.channel_mask and len(self.channel_mask) == 1:
                 frame_shape = frame_shape[:2]
@@ -293,7 +293,7 @@ class Dataset():
             self.loadFrames(frame_mask_override=[0])
 
             # Get shape
-            frame_shape = list(yp.shape(self._frame_list[0]))
+            frame_shape = list(np.shape(self._frame_list[0]))
 
         # Check if channel_mask is used - if so, set the color (third) dimension to be the correct length
         if self.channel_mask is not None and len(self.channel_mask) > 1:
@@ -343,7 +343,7 @@ class Dataset():
         if self.channel_mask is None:
             return [self._frame_list[i] for i in self.frame_mask]
         elif len(self.channel_mask) == 1:
-            if yp.ndim(self._frame_list[0]) == 3:
+            if np.ndim(self._frame_list[0]) == 3:
                 return [self._frame_list[i][:, :, self.channel_mask[0]] for i in self.frame_mask]
             else:
                 return [self._frame_list[i] for i in self.frame_mask]
@@ -362,10 +362,10 @@ class Dataset():
         # Assign new frames
         if self._frame_mask is not None:
             for index, frame_index in enumerate(self.frame_mask):
-                self._frame_list[frame_index] = yp.dcopy(new_frame_list[index])
+                self._frame_list[frame_index] = np.copy(new_frame_list[index])
         else:
             for i in range(len(new_frame_list)):
-                self._frame_list[i] = yp.dcopy(new_frame_list[i])
+                self._frame_list[i] = np.copy(new_frame_list[i])
 
     @property
     def frame_state_list(self):
@@ -412,9 +412,9 @@ class Dataset():
         # convert structure to metadata
         json_dict['metadata'] = self.metadata.__dict__.copy()
         json_dict['metadata']['camera'] = self.metadata.camera.__dict__.copy()
-        json_dict['metadata']['camera']['roi'] = self.metadata.camera.roi.__dict__.copy()
+        json_dict['metadata']['camera']['roi'] = self.metadata.camera.roi.to_dict()
         json_dict['metadata']['sample'] = self.metadata.sample.__dict__.copy()
-        json_dict['metadata']['sample']['roi'] = self.metadata.sample.roi.__dict__.copy()
+        json_dict['metadata']['sample']['roi'] = self.metadata.sample.roi.to_dict()
         json_dict['metadata']['pupil'] = self.metadata.pupil.__dict__.copy()
         json_dict['metadata']['pupil']['state_list'] = self.metadata.pupil.state_list.__dict__.copy()
         json_dict['metadata']['focus'] = self.metadata.focus.__dict__.copy()
@@ -427,11 +427,11 @@ class Dataset():
         json_dict['metadata']['objective'] = self.metadata.objective.__dict__.copy()
         json_dict['metadata']['system'] = self.metadata.system.__dict__.copy()
         json_dict['metadata']['background'] = self.metadata.background.__dict__.copy()
-        json_dict['metadata']['background']['roi'] = self.metadata.background.roi.__dict__.copy()
+        json_dict['metadata']['background']['roi'] = self.metadata.background.roi.to_dict()
         json_dict['metadata']['groundtruth'] = self.metadata.groundtruth.__dict__.copy()
 
         # Clean up dictionary values
-        yp.sanatizeDictionary(json_dict)
+        ut.sanitize_dict(json_dict)
 
         # Initialize frame state list
         json_dict['frame_state_list'] = {}
@@ -488,7 +488,7 @@ class Dataset():
         metadata_file_name = out_dir + json_dict['metadata']['file_header'] + '.json'
 
         # Sanatize json file
-        yp.sanatizeDictionary(json_dict)
+        ut.sanitize_dict(json_dict)
 
         # Assign directory in dataset object
         self.directory = out_dir
@@ -524,9 +524,9 @@ class Dataset():
         output_path = os.path.join(reconstruction_subdirectory, reconstruction_filename)
 
         # Cast reconstruction as an 8-bit tiff_file
-        max_value, min_value = yp.max(object), yp.min(object)
-        reconstruction = 255.0 * (yp.dcopy(object) - min_value) / (max_value if max_value != 0.0 else 1.0)
-        reconstruction = yp.cast(reconstruction, dtype='uint8', backend='numpy')
+        max_value, min_value = ut.max(object), ut.min(object)
+        reconstruction = 255.0 * (np.copy(object) - min_value) / (max_value if max_value != 0.0 else 1.0)
+        reconstruction = ut.cast(reconstruction, dtype='uint8')
 
         # Write reconstruction
         writeMultiPageTiff(output_path + '.tif',
@@ -540,7 +540,7 @@ class Dataset():
         parameters['label'] = label
 
         # Sanatize parameters (convert to lists from numpy arrays)
-        yp.sanatizeDictionary(parameters)
+        ut.sanitize_dict(parameters)
 
         # Write reconstruction parameters
         with open(output_path + '.json', 'w+') as fp:
@@ -569,7 +569,7 @@ class Dataset():
         self.metadata.calibration['dataset_header'] = self.metadata.file_header
 
         # Sanatize dictionary
-        yp.sanatizeDictionary(self.metadata.calibration)
+        ut.sanitize_dict(self.metadata.calibration)
 
         # Write reconstruction parameters
         with open(self.directory + '/calibration.json', 'w+') as fp:
@@ -590,13 +590,11 @@ class Dataset():
         # Load background and dark current
         for tif_filename in tif_list:
             if 'background' in tif_filename or 'bg' in tif_filename:
-                self.background = yp.cast(readMultiPageTiff(tif_filename)[0],
-                                          dtype=self.dtype,
-                                          backend=self.backend)
+                self.background = ut.cast(readMultiPageTiff(tif_filename)[0],
+                                          dtype=self.dtype)
             elif 'dark_current' in tif_filename:
-                self.dark_current = yp.cast(readMultiPageTiff(tif_filename)[0],
-                                            dtype=self.dtype,
-                                            backend=self.backend)
+                self.dark_current = ut.cast(readMultiPageTiff(tif_filename)[0],
+                                            dtype=self.dtype)
 
     def clearFramesFromMemory(self):
         """Erases all frames from memory."""
@@ -617,8 +615,8 @@ class Dataset():
         # Load frame from disk
         for tif_filename in tif_list:
             if 'background' not in tif_filename and 'dark_current' not in tif_filename:
-                frame = yp.cast(yp.squeeze(readMultiPageTiff(tif_filename, frame_subset=[frame_index])[0]),
-                                dtype=self.dtype, backend=self.backend)
+                frame = ut.cast(np.squeeze(readMultiPageTiff(tif_filename, frame_subset=[frame_index])[0]),
+                                dtype=self.dtype)
 
         # Remove background (if provided)
         if self.divide_background and self.background is not None:
@@ -628,7 +626,7 @@ class Dataset():
 
         # Remove background (if provided)
         if self.subtract_mean_dark_current and self.dark_current is not None:
-            frame = frame - yp.mean(self.dark_current)
+            frame = frame - ut.mean(self.dark_current)
 
         # Demosaic (if color camera)
         if self.metadata.camera.is_color and do_demosaic:
@@ -668,7 +666,7 @@ class Dataset():
 
         # Update new frames
         for frame_index, new_frame in zip(frame_mask, updated_frame_list):
-            self._frame_list[frame_index] = yp.cast(yp.squeeze(new_frame), self.dtype, self.backend)
+            self._frame_list[frame_index] = ut.cast(np.squeeze(new_frame), self.dtype)
 
         # Perform background subtraction and demosaicing if configured
         for frame_index in frame_mask:
@@ -690,8 +688,8 @@ class Dataset():
                                                          bayer_coupling_matrix=self.metadata.camera.bayer_coupling_matrix)
 
             # Median filter
-            if yp.mean(self._frame_list[frame_index]) < self.median_filter_threshold and self.use_median_filter:
-                self._frame_list[frame_index] = yp.filter.median(self._frame_list[frame_index])
+            if ut.mean(self._frame_list[frame_index]) < self.median_filter_threshold and self.use_median_filter:
+                self._frame_list[frame_index] = ut.median(self._frame_list[frame_index])
 
     def loadMetadata(self):
         """Load metadata and frame states from the dataset's JSON file."""
@@ -811,7 +809,7 @@ def removeBackground(frame, background=None, max_thresh=None):
         frame /= background
     else:
         max_thresh = np.inf if max_thresh is None else max_thresh
-        mean = yp.mean(frame)
+        mean = ut.mean(frame)
         frame /= mean if mean < max_thresh else max_thresh
     frame[frame < 0.] = 0.
     return frame
@@ -823,27 +821,27 @@ def demosaic(frame, order='grbg', bayer_coupling_matrix=None, white_balance=Fals
     With `bayer_coupling_matrix` (4x3), solves for RGB by least squares;
     otherwise uses the 2x2 pattern given by `order`.
     """
-    dtype, backend = yp.getDatatype(frame), yp.getBackend(frame)
-    out_shape = (int(yp.shape(frame)[0] / 2), int(yp.shape(frame)[1] / 2), 3)
-    frame_out = yp.zeros(out_shape, dtype, backend)
+    dtype = ut.dtype_name(frame)
+    out_shape = (int(np.shape(frame)[0] / 2), int(np.shape(frame)[1] / 2), 3)
+    frame_out = ut.zeros(out_shape, dtype)
 
     if bayer_coupling_matrix is not None:
-        frame_vec = yp.zeros((4, int(yp.shape(frame)[0] * yp.shape(frame)[1] / 4)), dtype, backend)
-        bayer_coupling_matrix = yp.cast(bayer_coupling_matrix, dtype, backend)
+        frame_vec = ut.zeros((4, int(np.shape(frame)[0] * np.shape(frame)[1] / 4)), dtype)
+        bayer_coupling_matrix = ut.cast(bayer_coupling_matrix, dtype)
 
         # Pattern index -> (row, col) offset
         offsets = {0: (1, 1), 1: (0, 1), 2: (1, 0), 3: (0, 0)}
         for index, (r, c) in offsets.items():
-            frame_vec[index, :] = yp.dcopy(yp.vec(frame[r::2, c::2]))
+            frame_vec[index, :] = np.copy(ut.vec(frame[r::2, c::2]))
 
-        result = yp.linalg.lstsq(bayer_coupling_matrix, frame_vec)
-        result -= yp.amin(result)
-        result /= yp.amax(result)
+        result = np.linalg.lstsq(bayer_coupling_matrix, frame_vec, rcond=None)[0]
+        result -= ut.min(result)
+        result /= ut.max(result)
         for channel in range(3):
-            frame_out[:, :, channel] = yp.reshape(result[channel], out_shape[:2])
+            frame_out[:, :, channel] = np.reshape(result[channel], out_shape[:2])
             if white_balance:
-                frame_out[:, :, channel] -= yp.amin(frame_out[:, :, channel])
-                frame_out[:, :, channel] /= yp.amax(frame_out[:, :, channel])
+                frame_out[:, :, channel] -= ut.min(frame_out[:, :, channel])
+                frame_out[:, :, channel] /= ut.max(frame_out[:, :, channel])
         return frame_out
 
     # Bayer 2x2 cell indices: 0 1 / 2 3
@@ -857,10 +855,10 @@ def demosaic(frame, order='grbg', bayer_coupling_matrix=None, white_balance=Fals
     frame_out[:, :, 0] = frame[r0[0]::2, r0[1]::2]
     frame_out[:, :, 1] = (frame[g10[0]::2, g10[1]::2] + frame[g20[0]::2, g20[1]::2]) / 2.0
     frame_out[:, :, 2] = frame[b0[0]::2, b0[1]::2]
-    frame_out /= yp.max(frame_out)
+    frame_out /= ut.max(frame_out)
 
     if white_balance:
         for channel in range(3):
-            frame_out[:, :, channel] /= yp.max(frame_out[:, :, channel])
+            frame_out[:, :, channel] /= ut.max(frame_out[:, :, channel])
 
     return frame_out

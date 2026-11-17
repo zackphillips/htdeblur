@@ -15,14 +15,13 @@ import numpy as np
 import scipy as sp
 import matplotlib
 from matplotlib import pyplot as plt
-import llops as yp
+from .. import _util as ut
 
 # Custom scale bar object
 from matplotlib_scalebar.scalebar import ScaleBar
 
 # Libwallerlab imports
-from llops import display
-from llops import Roi
+from ..roi import Roi
 
 
 class StopAndStareAcquisition():
@@ -158,7 +157,7 @@ class StopAndStareAcquisition():
         t0 = time.time()
         frames_acquired = 0
         frame_list = []
-        for frame in yp.display.progressBar(self.hardware_controller_list['position'].state_sequence, name='Frames Acquired'):
+        for frame in self.hardware_controller_list['position'].state_sequence:
             pos = frame['states']
             x = pos[0][0]['value']['x']
             y = pos[0][0]['value']['y']

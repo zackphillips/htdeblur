@@ -5,15 +5,15 @@ import os
 import numpy as np
 import imageio.v3 as iio
 from skimage.transform import resize
-import llops as yp
+from . import _util as ut
 
 _RESOURCES = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources')
 
 
 def _load_image(filename, shape=None, dtype=None, backend=None, color_channel='average',
                 reshape_mode='constant', anti_aliasing=False):
-    backend = backend if backend is not None else yp.config.default_backend
-    dtype = dtype if dtype is not None else yp.config.default_dtype
+    backend = backend if backend is not None else 'numpy'
+    dtype = dtype if dtype is not None else ut.DEFAULT_DTYPE
 
     image = np.asarray(iio.imread(os.path.join(_RESOURCES, filename)))
 
@@ -30,17 +30,16 @@ def _load_image(filename, shape=None, dtype=None, backend=None, color_channel='a
         image = resize(image, shape, mode=reshape_mode, preserve_range=True,
                        anti_aliasing=anti_aliasing).astype(float)
 
-    return yp.cast(image, dtype, backend)
+    return ut.cast(image, dtype)
 
 
 def california(shape=None, invert=False, min_value=0.9, max_value=1.1, dtype=None, backend=None, **kwargs):
     """California-outline amplitude object scaled to [min_value, max_value]."""
     obj = _load_image('california.png', shape, dtype, backend, **kwargs)
-    obj -= yp.min(obj)
-    obj /= yp.max(obj)
+    obj -= ut.min(obj)
+    obj /= ut.max(obj)
     if invert:
         obj = 1 - obj
     obj *= (max_value - min_value)
     obj += min_value
-    return yp.cast(obj, dtype if dtype is not None else yp.config.default_dtype,
-                   backend if backend is not None else yp.config.default_backend)
+    return ut.cast(obj, dtype if dtype is not None else ut.DEFAULT_DTYPE)

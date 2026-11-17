@@ -1,5 +1,7 @@
 from .dataset import Dataset
-import llops as yp
+from . import _util as ut
+from . import linops
+from .roi import Roi
 import numpy as np
 import copy
 
@@ -50,7 +52,7 @@ class MotionDeblurDataset(Dataset):
 
         # Determine the direction of individual segments
         segment_direction_list = []
-        segment_list = sorted(yp.unique(self.frame_segment_map))
+        segment_list = sorted(ut.unique(self.frame_segment_map))
 
         # Store previous position segment indicies
         frame_mask_old = self.frame_mask
@@ -205,8 +207,8 @@ class MotionDeblurDataset(Dataset):
             corrections = dataset.metadata.calibration['blur_vector']
 
         # Get datatype and backends
-        dtype = dtype if dtype is not None else yp.config.default_dtype
-        backend = backend if backend is not None else yp.config.default_backend
+        dtype = dtype if dtype is not None else ut.DEFAULT_DTYPE
+        backend = backend if backend is not None else 'numpy'
 
         # Calculate effective pixel size if necessaey
         if dataset.metadata.system.eff_pixel_size_um is None:
@@ -300,7 +302,7 @@ class MotionDeblurDataset(Dataset):
                 _positions = np.asarray(position_list[index])
                 for scale_correction in corrections['scale']:
                     factor, axis = corrections['scale']['factor'], corrections['scale']['axis']
-                    _positions[:, axis] = ((_positions[:, axis] - yp.min(_positions[:, axis])) * factor + yp.min(_positions[:, axis]))
+                    _positions[:, axis] = ((_positions[:, axis] - ut.min(_positions[:, axis])) * factor + ut.min(_positions[:, axis]))
                 position_list[index] = _positions.tolist()
 
         # Synthesize blur vectors
@@ -308,31 +310,27 @@ class MotionDeblurDataset(Dataset):
         for frame_index in range(dataset.shape[0]):
             #  Generate blur vectors
             if use_phase_ramp:
-                from llops.operators import PhaseRamp
-                kernel_shape = [yp.fft.next_fast_len(max(sh, 1)) for sh in blur_vector_roi_list[frame_index].shape]
-                offset = yp.cast([sh // 2 + st for (sh, st) in zip(kernel_shape, blur_vector_roi_list[frame_index].start)], 'complex32', dataset.backend)
+                kernel_shape = [ut.next_fast_len(max(sh, 1)) for sh in blur_vector_roi_list[frame_index].shape]
+                offset = ut.cast([sh // 2 + st for (sh, st) in zip(kernel_shape, blur_vector_roi_list[frame_index].start)], 'complex32')
 
-                # Create phase ramp and calculate offset
-                R = PhaseRamp(kernel_shape, dtype='complex32', backend=dataset.backend)
-
-                # Generate blur vector
-                blur_vector = yp.zeros(R.M, dtype='complex32', backend=dataset.backend)
+                # Sum of phase ramps (Fourier shift theorem), one per illuminated position
+                blur_vector = ut.zeros(kernel_shape, dtype='complex32')
                 for pos, illum in zip(position_list[frame_index], illumination_list[frame_index]):
-                    pos = yp.cast(pos, dtype=dataset.dtype, backend=dataset.backend)
-                    blur_vector += (R * (yp.cast(pos - offset, 'complex32')))
+                    pos = ut.cast(pos, dtype=dataset.dtype)
+                    blur_vector += linops.phase_ramp(kernel_shape, ut.cast(pos - offset, 'complex32'))
 
                 # Take inverse Fourier Transform
-                blur_vector = yp.abs(yp.cast(yp.iFt(blur_vector)), 0.0)
+                blur_vector = np.abs(ut.cast(ut.iFt(blur_vector)))
 
                 if position_list[frame_index][0][-1] > position_list[frame_index][0][0]:
-                    blur_vector = yp.flip(blur_vector)
+                    blur_vector = ut.flip(blur_vector)
 
             else:
-                blur_vector = yp.asarray([illum[0]['value']['w'] for illum in illumination_list[frame_index]],
-                                         dtype=dtype, backend=backend)
+                blur_vector = ut.asarray([illum[0]['value']['w'] for illum in illumination_list[frame_index]],
+                                         dtype=dtype)
 
             # Normalize illuminaiton vectors
-            blur_vector /= yp.scalar(yp.sum(blur_vector))
+            blur_vector /= ut.scalar(ut.sum(blur_vector))
 
             # Append to list
             blur_vector_list.append(blur_vector)
@@ -353,7 +351,7 @@ class MotionDeblurDataset(Dataset):
             convolution_support_start = [kernel_center - sh // 2 for (kernel_center, sh) in zip(blur_roi.center, self.frame_shape)]
 
             # Generate ROI
-            roi_list.append(yp.Roi(start=convolution_support_start, shape=self.frame_shape))
+            roi_list.append(Roi(start=convolution_support_start, shape=self.frame_shape))
 
         return roi_list
 
@@ -417,8 +415,8 @@ class MotionDeblurDataset(Dataset):
             (frame_normalization_list_y, frame_normalization_list_x) = normalize_measurements(self, debug=False)
 
             # Convert to numpy for saving
-            _frame_normalization_list_y = [yp.changeBackend(norm, 'numpy').tolist() for norm in frame_normalization_list_y]
-            _frame_normalization_list_x = [yp.changeBackend(norm, 'numpy').tolist() for norm in frame_normalization_list_x]
+            _frame_normalization_list_y = [np.asarray(norm).tolist() for norm in frame_normalization_list_y]
+            _frame_normalization_list_x = [np.asarray(norm).tolist() for norm in frame_normalization_list_x]
 
             # Save in metadata
             self.metadata.calibration['normalization'] = {'frame_normalization_x': _frame_normalization_list_x,
@@ -507,7 +505,6 @@ class MotionDeblurDataset(Dataset):
                             frame_offset_list[frame_index][i] += frame_offset_list_segment[index][i]
 
             if segment_registration_mode is not None:
-                from llops.operators import VecStack, Segmentation
                 from htdeblur.recon import alignRoiListToOrigin, register_roi_list
                 stitched_segment_list, stitched_segment_roi_list = [], []
                 # Stitch segments
@@ -531,10 +528,10 @@ class MotionDeblurDataset(Dataset):
                     alignRoiListToOrigin(roi_list)
 
                     # Create segmentation operator
-                    G = Segmentation(roi_list)
+                    G = linops.Segmentation(roi_list)
 
                     # Get measurement list
-                    y = yp.astype(VecStack(self.frame_list), G.dtype)
+                    y = ut.astype(linops.vector_stack(self.frame_list), G.dtype)
 
                     # Append to list
                     stitched_segment_list.append(G.inv * y)

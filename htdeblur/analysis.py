@@ -2,7 +2,7 @@ import numpy as np
 import math
 import copy
 import matplotlib.pyplot as plt
-import llops as yp
+from . import _util as ut
 from . import blurkernel
 
 # Default illumination parameters
@@ -102,11 +102,11 @@ def calcDnfFromKernel(x):
         return 0
     else:
         # Normalize
-        x = x / yp.scalar(yp.sum(x))
+        x = x / ut.scalar(ut.sum(x))
 
         # Take fourier transform intensity
-        x_fft = yp.Ft(x)
-        sigma_x = yp.abs(x_fft) ** 2
+        x_fft = ut.Ft(x)
+        sigma_x = np.abs(x_fft) ** 2
 
         # Calculate DNF
         return np.sqrt(1 / len(x) * np.sum(1 / sigma_x))
@@ -1052,8 +1052,8 @@ def countsToSNR(signal_counts, dnf=1):
 
 def snr(signal, noise_roi=None, signal_roi=None, debug=False):
     """Imaging SNR: mean(signal) / std(signal), optionally over ROIs. Ported from comptic.noise."""
-    signal_mean = yp.mean(signal) if signal_roi is None else yp.mean(signal[signal_roi.slice])
-    signal_std = yp.std(signal) if noise_roi is None else yp.std(signal[noise_roi.slice])
+    signal_mean = ut.mean(signal) if signal_roi is None else ut.mean(signal[signal_roi.slice])
+    signal_std = np.std(signal) if noise_roi is None else np.std(signal[noise_roi.slice])
     if debug:
-        print('Mean is %g, std is %g' % (yp.scalar(signal_mean), yp.scalar(signal_std)))
-    return yp.scalar(signal_mean / signal_std)
+        print('Mean is %g, std is %g' % (ut.scalar(signal_mean), ut.scalar(signal_std)))
+    return ut.scalar(signal_mean / signal_std)
