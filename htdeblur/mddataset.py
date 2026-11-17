@@ -1,10 +1,10 @@
-from comptic.containers import Dataset
+from .dataset import Dataset
 import llops as yp
 import numpy as np
 import copy
 
 class MotionDeblurDataset(Dataset):
-    """ A subclass of the comptic dataset with motion deblur specific functions"""
+    """ A subclass of htdeblur.dataset.Dataset with motion deblur specific functions"""
 
     def __init__(self, use_first_illumination_sequence_as_template=True, *args, **kwargs):
         """This class implements motion-deblur specific changes and fixes."""
@@ -491,10 +491,11 @@ class MotionDeblurDataset(Dataset):
                         roi += offset
 
                     # Perform registration
-                    from comptic.registration import register_roi_list
+                    from htdeblur.recon import register_roi_list
                     frame_offset_list_segment = register_roi_list(self.frame_list,
                                                                   roi_list,
                                                                   debug=debug,
+                                                                  replace_untrusted=False,
                                                                   tolerance=(1000, 1000),
                                                                   method=frame_registration_mode,
                                                                   force_2d=False,

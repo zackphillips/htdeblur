@@ -1048,3 +1048,12 @@ def exposureToCounts(exposure_time_s, camera_exposure_counts_per_unit=1, **kwarg
 def countsToSNR(signal_counts, dnf=1):
     # Use shot-noise calculation of counts to SNR
     return signal_counts / (dnf * np.sqrt(signal_counts))
+
+
+def snr(signal, noise_roi=None, signal_roi=None, debug=False):
+    """Imaging SNR: mean(signal) / std(signal), optionally over ROIs. Ported from comptic.noise."""
+    signal_mean = yp.mean(signal) if signal_roi is None else yp.mean(signal[signal_roi.slice])
+    signal_std = yp.std(signal) if noise_roi is None else yp.std(signal[noise_roi.slice])
+    if debug:
+        print('Mean is %g, std is %g' % (yp.scalar(signal_mean), yp.scalar(signal_std)))
+    return yp.scalar(signal_mean / signal_std)

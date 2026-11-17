@@ -6,8 +6,9 @@ import skimage
 import os
 
 # Comptic imports
-from comptic.imaging import pupil, otf
-from comptic import registration, containers
+from .optics import otf
+from . import registration
+from .dataset import Reconstruction as ReconstructionResult
 
 from . import blurkernel
 
@@ -800,7 +801,7 @@ class Reconstruction():
         if self.object_recovered is not None:
 
             # Update dataset reconstruction class
-            self.dataset.reconstruction = io.Reconstruction()
+            self.dataset.reconstruction = ReconstructionResult()
             self.dataset.reconstruction.object = self.object_recovered
             self.dataset.reconstruction.parameters = self.reconstruction_parameters
 
@@ -1202,10 +1203,7 @@ def register_roi_list(measurement_list, roi_list, axis=None,
                                                                           axis=_axis,
                                                                           method=method,
                                                                           preprocess_methods=preprocess_methods,
-                                                                          pad_factor=1.5,
-                                                                          pad_type=0,
                                                                           energy_ratio_threshold=energy_ratio_threshold,
-                                                                          sigma=0.1,
                                                                           debug=False)
 
                 # Deal with axis definitions

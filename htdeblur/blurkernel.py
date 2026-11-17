@@ -213,7 +213,7 @@ def blurVectorsFromDataset(dataset, dtype=None, backend=None, debug=False,
                            use_phase_ramp=False, corrections={}):
     """
     This function generates the object size, image size, and blur kernels from
-    a comptic dataset object.
+    an htdeblur Dataset object.
 
         Args:
             dataset: An io.Dataset object
@@ -400,7 +400,7 @@ def blurKernelRecoveryFromStatic(blurred, static, solver='iterative', reg=None, 
     return(kernel_recovered)
 
 def registerDatasetImages(dataset, roi=None):
-    from comptic.registration import registerImage
+    from .registration import registerImage
     shift_list = []
     image_list = []
     for index in range(1, len(dataset.frame_list)):

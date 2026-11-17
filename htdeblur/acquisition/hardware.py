@@ -24,7 +24,6 @@ import os, sys
 import json
 import llops as yp
 from llops import Roi
-import comptic
 
 # Hardware-only dependencies. Install with `pip install htdeblur[acquisition]`;
 # Micro-Manager (MMCorePy) must be installed separately.

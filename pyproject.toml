@@ -16,8 +16,9 @@ dependencies = [
     "scipy>=1.10,<1.14",
     "matplotlib>=3.7,<3.10",
     "scikit-image>=0.21,<0.25",
-    "tifffile",
-    # Not on PyPI; install manually (see README): llops, comptic
+    "tifffile>=2022.4",
+    "imageio>=2.16",
+    # Not on PyPI; install manually (see README): llops
 ]
 
 [project.optional-dependencies]
@@ -29,3 +30,6 @@ notebooks = ["jupyter"]
 
 [tool.setuptools.packages.find]
 include = ["htdeblur*"]
+
+[tool.setuptools.package-data]
+htdeblur = ["resources/*.png"]

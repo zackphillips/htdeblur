@@ -595,6 +595,8 @@ name = "htdeblur"
 version = "0.0.2"
 source = { editable = "." }
 dependencies = [
+    { name = "imageio", version = "2.38.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "imageio", version = "2.38.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "scikit-image" },
@@ -617,6 +619,7 @@ plotly = [
 
 [package.metadata]
 requires-dist = [
+    { name = "imageio", specifier = ">=2.16" },
     { name = "jupyter", marker = "extra == 'notebooks'" },
     { name = "matplotlib", specifier = ">=3.7,<3.10" },
     { name = "matplotlib-scalebar", marker = "extra == 'acquisition'" },
@@ -625,7 +628,7 @@ requires-dist = [
     { name = "pyserial", marker = "extra == 'acquisition'" },
     { name = "scikit-image", specifier = ">=0.21,<0.25" },
     { name = "scipy", specifier = ">=1.10,<1.14" },
-    { name = "tifffile" },
+    { name = "tifffile", specifier = ">=2022.4" },
 ]
 provides-extras = ["acquisition", "plotly", "notebooks"]
 

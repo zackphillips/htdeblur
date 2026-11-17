@@ -8,13 +8,19 @@
 |---|---|
 | `htdeblur/blurkernel.py` | Blur kernel generation, illumination optimization, kernel recovery |
 | `htdeblur/recon.py` | Multi-frame forward model and reconstruction |
-| `htdeblur/mddataset.py` | `MotionDeblurDataset` loader (subclasses `comptic.containers.Dataset`) |
-| `htdeblur/analysis.py` | SNR / deconvolution noise factor (DNF) analysis |
+| `htdeblur/dataset.py` | `Dataset` (multi-page TIFF + JSON) and metadata classes |
+| `htdeblur/mddataset.py` | `MotionDeblurDataset`, the motion-deblur subclass of `Dataset` |
+| `htdeblur/registration.py` | Pairwise image registration (cross-correlation, ORB) |
+| `htdeblur/optics.py` | Pupil and OTF models |
+| `htdeblur/simulation.py` | Simulated test object used by the schematic figure |
+| `htdeblur/analysis.py` | SNR / deconvolution noise factor (DNF) analysis, `snr` |
 | `htdeblur/solver.py`, `pgd.py`, `project_simplex_box.py` | Kernel optimization: projected gradient descent, simplex/box projection |
 | `htdeblur/blurkernelplot.py` | Kernel plotting helpers |
 | `htdeblur/acquisition/` | Hardware control (stage, LED array, camera via Micro-Manager). Optional |
 | `notebooks/publications/` | Figure notebooks for the journal paper |
 | `notebooks/archive/` | Sandbox, conference, analysis and acquisition notebooks. Unmaintained; most need `libwallerlab` |
+
+The parts of `comptic` (a deprecated, private lab library) this code used (dataset container, registration, pupil/OTF, SNR, test object) were folded into `htdeblur` and trimmed; comptic is no longer a dependency.
 
 ## Installation
 
@@ -37,10 +43,9 @@ pip install -e ".[notebooks]"    # + jupyter
 | Package | Used by | Notes |
 |---|---|---|
 | `llops` | almost everything (`import llops as yp`) | Linear operators, solvers, backend abstraction. Use the numpy backend |
-| `comptic` | `recon`, `mddataset`, `blurkernel` (registration), `acquisition.hardware` | Dataset container, registration, pupil/OTF |
-| `illuminate` | `acquisition.hardware` only | LED array controller |
+| `illuminate` | `acquisition.hardware` only | LED array controller ([sci-microscopy/illuminate](https://github.com/sci-microscopy/illuminate)) |
 | `MMCorePy` | `acquisition.hardware` only | Ships with Micro-Manager 2.0 |
-| `libwallerlab` | most notebooks (not the package) | Predecessor of this package, llops and comptic |
+| `libwallerlab` | most notebooks (not the package) | Predecessor of this package and llops |
 | `ndoperators` | `fig_multiframe_schematic`, `fig_optimization`, `fig_multiframe_operator` and some archive notebooks | Operator library; not used by the package |
 
 `pgd` and `project_simplex_box` depend only on numpy and import without any of these.
@@ -56,8 +61,8 @@ The notebooks in `notebooks/publications/` were run on the authors' machines. Be
 | Notebook | Imports | Data |
 |---|---|---|
 | `fig_limiting_analysis.ipynb` | `htdeblur` | `journalpaper/data` |
-| `fig_multiframe_schematic.ipynb` | `htdeblur`, `llops`, `comptic`, `ndoperators` | none (simulated test object) |
-| `fig_snr_comparison.ipynb` | `htdeblur`, `llops`, `comptic` | beads and resolution target reconstructions |
+| `fig_multiframe_schematic.ipynb` | `htdeblur`, `llops`, `ndoperators` | none (simulated test object) |
+| `fig_snr_comparison.ipynb` | `htdeblur`, `llops` | beads and resolution target reconstructions |
 | `fig_reg_comparison_thinkpad.ipynb` | `llops` | regularized bead reconstructions (`*.npz`) |
 | `fig_main.ipynb`, `fig_full_field.ipynb` | `libwallerlab`, `llops` | stitched bead reconstructions |
 | `fig_fom_2019.ipynb` | `libwallerlab`, `llops` | `fom2019/` |
