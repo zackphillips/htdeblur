@@ -10,7 +10,7 @@ readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Zachary F. Phillips" }, { name = "Sarah Dean" }]
 # Archived research code: pinned to the last numpy 1.x line. Not tested on numpy 2.
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "numpy>=1.24,<2",
     "scipy>=1.10,<1.14",

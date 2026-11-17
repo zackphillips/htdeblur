@@ -24,7 +24,7 @@ The parts of `comptic` (a deprecated, private lab library) this code used (datas
 
 ## Installation
 
-Requires Python 3.10–3.12 and numpy 1.x. The code is not tested on numpy 2.
+Requires Python 3.12 and numpy 1.x. The code is not tested on numpy 2.
 
 ```shell
 git clone https://github.com/zackphillips/htdeblur
@@ -34,7 +34,7 @@ pip install -e ".[acquisition]"  # + hardware control
 pip install -e ".[notebooks]"    # + jupyter
 ```
 
-`uv.lock` pins a resolved environment for Python 3.12 (`uv sync`).
+`uv.lock` pins a resolved environment (`uv sync`).
 
 ### Dependencies not on PyPI
 
