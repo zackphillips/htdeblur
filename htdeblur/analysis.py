@@ -1057,3 +1057,9 @@ def snr(signal, noise_roi=None, signal_roi=None, debug=False):
     if debug:
         print('Mean is %g, std is %g' % (ut.scalar(signal_mean), ut.scalar(signal_std)))
     return ut.scalar(signal_mean / signal_std)
+
+
+def add_noise(signal, snr=1.0):
+    """Add zero-mean Gaussian noise with std |mean(signal)| / snr (libwallerlab noise.add, 'gaussian')."""
+    signal_mean = np.abs(ut.mean(signal))
+    return signal + np.random.normal(0, signal_mean / snr, np.shape(signal))

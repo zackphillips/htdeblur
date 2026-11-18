@@ -84,3 +84,21 @@ def test_only_one_nonsmooth_regularizer():
     A = linops.Crop(N=(8, 8), M=(8, 8))
     with pytest.raises(ValueError):
         linops.Objective(linops.L2Data(A, np.zeros((8, 8), np.float32)), [linops.TVReg(1), linops.L1Reg(1)])
+
+
+def test_linear_convolve_impulse_and_inverse():
+    kernel = np.zeros((32, 48), np.float32)
+    kernel[16, 20:28] = rng.rand(8)
+    kernel /= kernel.sum()
+    delta = np.zeros((32, 48), np.float32)
+    delta[16, 24] = 1.0
+    out = ut.convolve(delta, kernel, pad_value=0)
+    np.testing.assert_allclose(out, kernel, atol=1e-6)
+
+    x = rng.rand(32, 48).astype(np.float32)
+    blurred = ut.convolve(x, kernel)
+    restored = ut.deconvolve(blurred, kernel, reg=1e-3)
+    inner = (slice(4, -4), slice(12, -12))
+    err_blurred = np.abs(blurred - x)[inner].mean()
+    err_restored = np.abs(restored - x)[inner].mean()
+    assert err_restored < 0.5 * err_blurred

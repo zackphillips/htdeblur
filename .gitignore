@@ -104,3 +104,6 @@ venv.bak/
 .mypy_cache/
 .DS_Store
 *.ipynb~*
+
+# Notebook outputs (HTDEBLUR_FIGURES default)
+notebooks/publications/figures/

@@ -160,10 +160,10 @@ class Convolution(Operator):
         self.pad_value = pad_value
 
     def forward(self, x):
-        return self._out(ut.iFt(ut.Ft(x) * self.kernel_f), self.M)
+        return self._out(ut.iFt(ut.Ft(np.reshape(x, self.N)) * self.kernel_f), self.M)
 
     def adjoint(self, y):
-        return self._out(ut.iFt(ut.Ft(y) * np.conj(self.kernel_f)), self.N)
+        return self._out(ut.iFt(ut.Ft(np.reshape(y, self.M)) * np.conj(self.kernel_f)), self.N)
 
     def inverse(self, y, reg=None):
         intensity = np.abs(self.kernel_f) ** 2
@@ -180,7 +180,7 @@ class Diagonalize(Operator):
         self.M = self.N = tuple(np.shape(self.vector))
 
     def forward(self, x):
-        return self._out(x * self.vector, self.M)
+        return self._out(np.reshape(x, self.N) * self.vector, self.M)
 
     def adjoint(self, y):
         return self._out(np.conj(self.vector) * np.reshape(y, self.N), self.N)

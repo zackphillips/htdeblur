@@ -15,12 +15,12 @@
 | `htdeblur/mddataset.py` | `MotionDeblurDataset`, the motion-deblur subclass of `Dataset` |
 | `htdeblur/registration.py` | Pairwise image registration (cross-correlation, ORB) |
 | `htdeblur/optics.py` | Pupil and OTF models |
-| `htdeblur/simulation.py` | Simulated test object used by the schematic figure |
+| `htdeblur/simulation.py` | Test objects (California, UCB logo/seal) used by the figure notebooks |
 | `htdeblur/analysis.py` | SNR / deconvolution noise factor (DNF) analysis, `snr` |
 | `htdeblur/solver.py`, `pgd.py`, `project_simplex_box.py` | Kernel optimization: projected gradient descent, simplex/box projection |
 | `htdeblur/blurkernelplot.py` | Kernel plotting helpers |
 | `htdeblur/acquisition/` | Hardware control (stage, LED array, camera via Micro-Manager). Optional |
-| `notebooks/publications/` | Figure notebooks for the journal paper |
+| `notebooks/publications/` | Figure notebooks for the journal paper and FOM 2019 abstract |
 | `notebooks/archive/` | Sandbox, conference, analysis and acquisition notebooks. Unmaintained; most need `libwallerlab` |
 
 The parts of two deprecated, private lab libraries that this code used were folded in and trimmed: `comptic` (dataset container, registration, pupil/OTF, SNR, test object) and `llops` (array backend, operators, solvers). The package depends only on PyPI packages.
@@ -49,39 +49,11 @@ pip install -e ".[test]" && pytest
 
 ### Dependencies not on PyPI
 
-Only needed for hardware control and for notebooks that have not been ported.
-
-| Package | Used by | Notes |
-|---|---|---|
-| `llops` | most publication notebooks (not the package) | Private, deprecated. Notebooks import it directly as `yp` |
-| `illuminate` | `acquisition.hardware` only | LED array controller ([sci-microscopy/illuminate](https://github.com/sci-microscopy/illuminate)) |
-| `MMCorePy` | `acquisition.hardware` only | Ships with Micro-Manager 2.0 |
-| `libwallerlab` | most notebooks (not the package) | Predecessor of this package and llops |
-| `ndoperators` | `fig_multiframe_schematic`, `fig_optimization`, `fig_multiframe_operator` and some archive notebooks | Operator library; not used by the package |
-
+Only hardware control needs these: `illuminate` (LED array controller, [sci-microscopy/illuminate](https://github.com/sci-microscopy/illuminate)) and `MMCorePy` (ships with Micro-Manager 2.0). The publication notebooks no longer use `llops`, `libwallerlab` or `ndoperators`; the archived notebooks in `notebooks/archive/` still do.
 
 ## Reproducing figures
 
-The notebooks in `notebooks/publications/` were run on the authors' machines. Before running them:
-
-- Edit the hardcoded data and output paths (under `/Users/zfphil/...`, `/home/sarah/...`, `/home/deansarah/...`) at the top of each notebook.
-- Most expect `deblur.mplstyle`, a matplotlib style file that is not in this repo. Remove the `plt.style.use(...)` line, or provide your own.
-- Raw datasets and intermediate reconstructions (`*.npz`, `*.tiff`) are not in this repo.
-
-| Notebook | Imports | Data |
-|---|---|---|
-| `fig_limiting_analysis.ipynb` | `htdeblur` | `journalpaper/data` |
-| `fig_multiframe_schematic.ipynb` | `htdeblur`, `llops`, `ndoperators` | none (simulated test object) |
-| `fig_snr_comparison.ipynb` | `htdeblur`, `llops` | beads and resolution target reconstructions |
-| `fig_reg_comparison_thinkpad.ipynb` | `llops` | regularized bead reconstructions (`*.npz`) |
-| `fig_main.ipynb`, `fig_full_field.ipynb` | `libwallerlab`, `llops` | stitched bead reconstructions |
-| `fig_fom_2019.ipynb` | `libwallerlab`, `llops` | `fom2019/` |
-| `fig_optimization.ipynb` | `libwallerlab`, `llops`, `ndoperators` | `dnf_*.npz` (`fom2019/dnf_v_method.npz` included) |
-| `fig_reg_comparison.ipynb` | `libwallerlab`, `llops` | raw bead dataset, 2019-02-04 |
-| `fig_multiframe_operator.ipynb` | `libwallerlab`, `ndoperators` | single-illumination presentation data |
-| `fig_limiting_analysis_sarah.ipynb`, `_zack.ipynb` | `libwallerlab` | earlier variants of `fig_limiting_analysis` |
-
-Notebooks that import `libwallerlab` need porting to `htdeblur` imports before they will run against this package.
+The figure notebooks are in `notebooks/publications/`; see its README for the per-notebook status and data layout. Seven of the twelve need no external data and run in CI. The other five need the original reconstructions and datasets, which are not in the repository; point `HTDEBLUR_DATA` at them.
 
 ## Tests
 
