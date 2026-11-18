@@ -340,6 +340,40 @@ def _fft_axes(x, axes):
     return axes if isinstance(axes, (list, tuple)) else (axes,)
 
 
+def _linear_conv_setup(input_shape, h):
+    """Padded-convolution geometry from llops.fft.conv_functions (mode='same', padded, FFT-sized)."""
+    support = np.where(np.abs(flip(h)) > 0)
+    kernel_size = [int(np.max(ix) - np.min(ix) + 1) for ix in support]
+    crop_start = [(k // 2 * 2) // 2 for k in kernel_size]
+    conv_shape = [scipy.fftpack.next_fast_len(int(n + k)) for (n, k) in zip(input_shape, kernel_size)]
+    kernel_f = Ft(pad(h, conv_shape, center=True))
+    return conv_shape, crop_start, kernel_f
+
+
+def _linear_conv_apply(x, conv_shape, crop_start, kernel_f_mult, dtype, pad_value):
+    xp = pad(x, conv_shape, crop_start=crop_start, pad_value=pad_value)
+    out = iFt(Ft(xp) * kernel_f_mult)
+    if not np.issubdtype(dtype, np.complexfloating):
+        out = np.real(out)
+    return crop(out.astype(dtype), np.shape(x), crop_start=crop_start)
+
+
+def convolve(x, h, pad_value='edge'):
+    """Linear convolution, output the same size as x, with edge-padded boundaries (llops.convolve).
+
+    h is a centered kernel (any size up to the padded size); its nonzero support sets the padding.
+    """
+    conv_shape, crop_start, kernel_f = _linear_conv_setup(np.shape(x), h)
+    return _linear_conv_apply(x, conv_shape, crop_start, kernel_f, np.asarray(h).dtype, pad_value)
+
+
+def deconvolve(x, h, reg=0, pad_value='edge'):
+    """Tikhonov-regularized inverse of `convolve`: conj(H) / (|H|^2 + reg) (llops.deconvolve)."""
+    conv_shape, crop_start, kernel_f = _linear_conv_setup(np.shape(x), h)
+    inv = np.conj(kernel_f) / (np.abs(kernel_f) ** 2 + (reg if reg is not None else 0))
+    return _linear_conv_apply(x, conv_shape, crop_start, inv, np.asarray(h).dtype, pad_value)
+
+
 def convolve_circular(x, h):
     """Circular convolution with a centered kernel of the same shape (llops Convolution, mode='circular')."""
     out = iFt(Ft(x) * Ft(h))
@@ -367,6 +401,15 @@ decimate = downsample
 
 def upsample(x, factor=2):
     return resize(x, tuple(int(sh * factor) for sh in np.shape(x)))
+
+
+def bin(x, factor):
+    """Mean over non-overlapping factor x factor blocks (llops.filter.bin), computed in float."""
+    shape = [sh // factor for sh in np.shape(x)[:2]]
+    x = np.asarray(x)[:shape[0] * factor, :shape[1] * factor]
+    acc = np.float64 if x.dtype == np.float64 else np.float32
+    # Reduce over a reshaped view so large mosaics are not copied to float first
+    return x.reshape(shape[0], factor, shape[1], factor).mean(axis=(1, 3), dtype=acc)
 
 
 def gaussian(x, sigma=10):

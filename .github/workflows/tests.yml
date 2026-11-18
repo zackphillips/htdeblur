@@ -15,3 +15,15 @@ jobs:
           python-version: "3.12"
       - run: uv sync --frozen --extra test
       - run: uv run --frozen pytest -q
+
+  notebooks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen --extra test --extra notebooks
+      - run: uv run --frozen pytest -q tests/test_notebooks.py
+        env:
+          HTDEBLUR_RUN_NOTEBOOKS: "1"

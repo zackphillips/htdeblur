@@ -43,3 +43,31 @@ def california(shape=None, invert=False, min_value=0.9, max_value=1.1, dtype=Non
     obj *= (max_value - min_value)
     obj += min_value
     return ut.cast(obj, dtype if dtype is not None else ut.DEFAULT_DTYPE)
+
+
+# libwallerlab.utilities.simulation test objects (used by the FOM 2019 and
+# multi-frame operator notebooks). Note the different defaults from california():
+# anti-aliased resize, and a phase range of [1.1, 1].
+_TEST_IMAGES = {'ucblogo': 'callogo.png', 'ucbseal': 'ucbseal.png', 'california': 'california.png'}
+
+
+def test_object(absorption, shape=None, phase=None, absorption_min=0.9, absorption_max=1.1,
+                phase_min=1.1, phase_max=1.0, anti_aliasing=True, color_channel='average'):
+    """Absorption (and optional phase) test object scaled to the given ranges (libwallerlab testObject)."""
+    def load(label):
+        img = _load_image(_TEST_IMAGES[label], shape, dtype='float64', color_channel=color_channel,
+                          anti_aliasing=anti_aliasing).astype(float)
+        img -= img.min()
+        img /= img.max()
+        return img
+
+    obj = load(absorption) * (absorption_max - absorption_min) + absorption_min
+    if phase:
+        ph = load(phase) * (phase_max - phase_min) + phase_min
+        obj = obj * np.exp(1j * ph)
+    return obj
+
+
+def ucb(shape=(512, 512), **kwargs):
+    """UC Berkeley logo (absorption) with the seal as phase."""
+    return test_object('ucblogo', shape, phase='ucbseal', **kwargs)

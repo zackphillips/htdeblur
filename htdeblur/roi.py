@@ -101,6 +101,15 @@ class Roi:
     def copy(self):
         return self.__deepcopy__(None)
 
+    def draw(self, ax=None, c='r', linewidth=2, **kwargs):
+        """Outline this ROI on a matplotlib axis."""
+        import matplotlib.patches as mpatches
+        import matplotlib.pyplot as plt
+        ax = plt.gca() if ax is None else ax
+        rect = mpatches.Rectangle(list(reversed(self.start)), self.shape[1], self.shape[0],
+                                  edgecolor=c, facecolor=None, linewidth=linewidth, fill=False, **kwargs)
+        ax.add_artist(rect)
+
     # -- arithmetic ----------------------------------------------------------
 
     def _shifted_start(self, val, sign):
