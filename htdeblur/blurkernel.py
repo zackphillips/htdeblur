@@ -15,18 +15,19 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 import numpy as np
 import scipy as sp
 import math
+import matplotlib
 import matplotlib.pyplot as plt
 
 from . import solver
 from . import project_simplex_box
 from . import pgd
 
-import llops as yp
-import llops.operators as ops
+import scipy.ndimage
 
-from llops.solvers import iterative, objectivefunctions
-from llops import iFt, Ft
-from llops.config import default_backend, default_dtype
+from . import _util as ut
+from . import linops
+from ._util import Ft, iFt
+from .roi import Roi
 
 eps = 1e-13
 
@@ -56,8 +57,8 @@ def vector(pulse_count, kernel_length=None,
     """
 
     # Parse dtype and backend
-    dtype = dtype if dtype is not None else yp.config.default_dtype
-    backend = backend if backend is not None else yp.config.default_backend
+    dtype = dtype if dtype is not None else ut.DEFAULT_DTYPE
+    backend = backend if backend is not None else 'numpy'
 
     # Calculate kernel length if not provided
     if kernel_length is None:
@@ -108,7 +109,7 @@ def vector(pulse_count, kernel_length=None,
     kernel_best /= np.sum(kernel_best)
 
     # Cast
-    kernel_best = yp.cast(kernel_best, dtype, backend)
+    kernel_best = ut.cast(kernel_best, dtype)
 
     return (kernel_best, metric_best)
 
@@ -131,7 +132,7 @@ def generate(shape, blur_kernel_length, method='random_phase', axis=1,
              blur_illumination_fraction=0.5, position='center',normalize=True):
     # Generate blur kernel
     if method == 'constant':
-        illum = yp.ones(blur_kernel_length) * blur_illumination_fraction
+        illum = ut.ones(blur_kernel_length) * blur_illumination_fraction
     elif method == 'random_phase' or method == 'coded':
         illum, _ = genRandInitialization(blur_kernel_length, blur_illumination_fraction)
     elif method == 'random' or  method == 'uniform':
@@ -151,28 +152,28 @@ def fromVector(blur_vector, shape, axis=1, position='center',
     """Converts a blur vector to a blur kernel."""
 
     # Get length of kernel
-    blur_kernel_length = yp.size(blur_vector)
+    blur_kernel_length = ut.size(blur_vector)
 
     # Find correct dimension
     ndims = len(shape)
 
     # Expand illum to 2D and ensure it's in the correct direction
-    blur_vector = yp.expandDims(blur_vector, ndims)
+    blur_vector = ut.expand_dims(blur_vector, ndims)
 
     # Reverse blur vector if requested
     if reverse:
-        blur_vector = yp.flip(blur_vector)
+        blur_vector = ut.flip(blur_vector)
 
     # Ensure blur vector is 1D
-    blur_vector = yp.vec(blur_vector)
+    blur_vector = ut.vec(blur_vector)
 
     # Apply interpolation
     if interpolation_factor != 1.0:
         interpolated_length = int(np.round(interpolation_factor * len(blur_vector)))
-        blur_vector = yp.real(yp.iFt(yp.pad(yp.Ft(blur_vector), interpolated_length, center=True)))
+        blur_vector = np.real(ut.iFt(ut.pad(ut.Ft(blur_vector), interpolated_length, center=True)))
 
     # Ensure blur kernel has the correct dimensions
-    blur_vector = yp.expandDims(blur_vector, ndims)
+    blur_vector = ut.expand_dims(blur_vector, ndims)
 
     # Rotate if necessary
     if axis == 1:
@@ -180,27 +181,27 @@ def fromVector(blur_vector, shape, axis=1, position='center',
 
     # Position kernel in image
     if position == 'center':
-        kernel = yp.pad(blur_vector, shape, center=True)
+        kernel = ut.pad(blur_vector, shape, center=True)
     elif position == 'center_left':
         roll_amount = [0, 0]
         roll_amount[axis] = -blur_kernel_length // 2
-        kernel = yp.roll(yp.pad(blur_vector, shape, center=True), roll_amount)
+        kernel = ut.roll(ut.pad(blur_vector, shape, center=True), roll_amount)
     elif position == 'center_right':
         roll_amount = [0, 0]
         roll_amount[axis] = blur_kernel_length // 2
-        kernel = yp.roll(yp.pad(blur_vector, shape, center=True), roll_amount)
+        kernel = ut.roll(ut.pad(blur_vector, shape, center=True), roll_amount)
     elif position == 'origin':
-        kernel = yp.pad(blur_vector, shape, crop_start=(0, 0))
+        kernel = ut.pad(blur_vector, shape, crop_start=(0, 0))
     else:
         raise ValueError('Invalid position %s' % position)
 
     # Center kernel after pad. This is a hack.
-    roll_values = [1] * yp.ndim(kernel)
-    kernel = yp.roll(kernel, roll_values)
+    roll_values = [1] * np.ndim(kernel)
+    kernel = ut.roll(kernel, roll_values)
 
     # Normalize kernel
     if normalize:
-        kernel /= yp.scalar(yp.sum(kernel))
+        kernel /= ut.scalar(ut.sum(kernel))
 
     return kernel
 
@@ -213,7 +214,7 @@ def blurVectorsFromDataset(dataset, dtype=None, backend=None, debug=False,
                            use_phase_ramp=False, corrections={}):
     """
     This function generates the object size, image size, and blur kernels from
-    a comptic dataset object.
+    an htdeblur Dataset object.
 
         Args:
             dataset: An io.Dataset object
@@ -225,8 +226,8 @@ def blurVectorsFromDataset(dataset, dtype=None, backend=None, debug=False,
 
     """
 
-    dtype = dtype if dtype is not None else yp.config.default_dtype
-    backend = backend if backend is not None else yp.config.default_backend
+    dtype = dtype if dtype is not None else ut.DEFAULT_DTYPE
+    backend = backend if backend is not None else 'numpy'
 
     # Calculate effective pixel size if necessaey
     if dataset.metadata.system.eff_pixel_size_um is None:
@@ -308,8 +309,8 @@ def blurVectorsFromDataset(dataset, dtype=None, backend=None, debug=False,
     if 'scale' in corrections:
         for index in range(len(position_list)):
             _positions = np.asarray(position_list[index])
-            for ax in range(yp.shape(_positions)[1]):
-                _positions[:, ax] = ((_positions[:, ax] - yp.min(_positions[:, ax])) * corrections['scale'] + yp.min(_positions[:, ax]))
+            for ax in range(np.shape(_positions)[1]):
+                _positions[:, ax] = ((_positions[:, ax] - ut.min(_positions[:, ax])) * corrections['scale'] + ut.min(_positions[:, ax]))
 
             position_list[index] = _positions.tolist()
 
@@ -320,26 +321,23 @@ def blurVectorsFromDataset(dataset, dtype=None, backend=None, debug=False,
     for frame_index in range(len(dataset.frame_list)):
         #  Generate blur vectors
         if use_phase_ramp:
-            kernel_shape = [yp.fft.next_fast_len(max(sh, 1)) for sh in blur_vector_roi_list[frame_index].shape]
-            offset = yp.cast([sh // 2 + st for (sh, st) in zip(kernel_shape, blur_vector_roi_list[frame_index].start)], 'complex32')
+            kernel_shape = [ut.next_fast_len(max(sh, 1)) for sh in blur_vector_roi_list[frame_index].shape]
+            offset = ut.cast([sh // 2 + st for (sh, st) in zip(kernel_shape, blur_vector_roi_list[frame_index].start)], 'complex32')
 
-            # Create phase ramp and calculate offset
-            R = ops.PhaseRamp(kernel_shape, dtype='complex32')
-
-            # Generate blur vector
-            blur_vector = yp.zeros(R.M)
+            # Sum of phase ramps (Fourier shift theorem), one per illuminated position
+            blur_vector = ut.zeros(kernel_shape, 'complex32')
             for pos, illum in zip(position_list[frame_index], illumination_list[frame_index]):
-                blur_vector += (R * (yp.cast(pos, 'complex32') - offset))
+                blur_vector += linops.phase_ramp(kernel_shape, ut.cast(pos, 'complex32') - offset)
 
             # Take inverse Fourier Transform
-            blur_vector = yp.abs(yp.cast(yp.iFt(blur_vector)), 0.0)
+            blur_vector = np.abs(ut.cast(ut.iFt(blur_vector)))
 
         else:
-            blur_vector = yp.asarray([illum[0]['value']['w'] for illum in illumination_list[frame_index]],
-                                     dtype=dtype, backend=backend)
+            blur_vector = ut.asarray([illum[0]['value']['w'] for illum in illumination_list[frame_index]],
+                                     dtype=dtype)
 
         # Normalize illuminaiton vectors
-        blur_vector /= yp.scalar(yp.sum(blur_vector))
+        blur_vector /= ut.scalar(ut.sum(blur_vector))
 
         # Append to list
         blur_vector_list.append(blur_vector)
@@ -351,7 +349,11 @@ def blurVectorsFromDataset(dataset, dtype=None, backend=None, debug=False,
     return blur_vector_list, blur_vector_roi_list, frame_segment_map, position_list, illumination_list
 
 
-def blurKernelRecoveryFromStatic(blurred, static, solver='iterative', reg=None, iteration_count=10, system_otf=None, threshold=0.2):
+def blurKernelRecoveryFromStatic(blurred, static, reg=None, system_otf=None, threshold=0.2):
+    """Estimate a blur kernel by regularized Fourier division of a blurred frame by a static one.
+
+    (The iterative solver option used a 'windowed' llops convolution that no longer exists.)
+    """
     static_mean = np.mean(static)
     if static_mean > 1e-4:
         static = (static.copy() - static_mean) / static_mean
@@ -360,31 +362,8 @@ def blurKernelRecoveryFromStatic(blurred, static, solver='iterative', reg=None, 
     if blurred_mean > 1e-4:
         blurred = (blurred.copy() - blurred_mean) / blurred_mean
 
-    # if system_otf is not None:
-    #     static = iFt(Ft(static) * system_otf)
-
-    if solver == 'iterative':
-        A = ops.Convolution(blurred.shape, static, mode='windowed')
-        y = blurred.reshape(-1).astype(np.complex64)
-
-        # Initialization: choosing a "good" coefficient value will help in convergence
-        initialization = np.ones(y.shape, y.dtype)
-
-        # Define cost function
-        objective = objectivefunctions.L2(A, y, l2_reg=reg) #, reg=5e-3)
-
-
-        # Gradient descent implementation
-        kernel_recovered = iterative.GradientDescent(objective).solve(initialization=initialization,
-                                                                  step_size=1e-3,
-                                                                  nesterov_enabled=True,
-                                                                  iteration_count=iteration_count,
-                                                                  display_type='text',
-                                                                  display_iteration_delta=max((iteration_count // 10),1))
-    else:
-        if reg is None:
-            reg = 0
-        kernel_recovered = iFt((np.conj(Ft(static)) * Ft(blurred)) / (np.abs(Ft(static)) ** 2 + reg))
+    reg = 0 if reg is None else reg
+    kernel_recovered = iFt((np.conj(Ft(static)) * Ft(blurred)) / (np.abs(Ft(static)) ** 2 + reg))
 
     # Take real part
     kernel_recovered = np.real(kernel_recovered).reshape(static.shape)
@@ -400,7 +379,7 @@ def blurKernelRecoveryFromStatic(blurred, static, solver='iterative', reg=None, 
     return(kernel_recovered)
 
 def registerDatasetImages(dataset, roi=None):
-    from comptic.registration import registerImage
+    from .registration import registerImage
     shift_list = []
     image_list = []
     for index in range(1, len(dataset.frame_list)):
@@ -494,29 +473,8 @@ def genSamplingComb(object_size, image_size, dtype=np.complex64):
     return((sampling_comb, positions))
 
 
-def genConvolutionSupportList(blur_kernel_list, image_size, threshold=0.05):
-    """
-    This function generates a list of images defining the support of a windowed convolution operation.
-    """
-    object_size = blur_kernel_list[0].shape
-    W = ops.Crop(object_size, image_size)
-    kernel_support_mask = []
-    object_support_mask = []
-    print(W.dtype)
-    window_mask = np.abs(W.H * W * np.ones(W.shape[1], dtype=np.complex64)).reshape(object_size)
-    for blur_kernel in blur_kernel_list:
-        C = ops.Convolution((blur_kernel > threshold).astype(np.complex64), mode='windowed',
-                            pad_value=0, pad_size=int(object_size[0] / 2))
-        kernel_support_mask += [((C * (window_mask.reshape(-1).astype(np.complex64))).reshape(object_size) > threshold)]
-        object_support_mask.append(kernel_support_mask[-1])
-        for dim in range(kernel_support_mask[-1].ndim):
-            object_support_mask[-1] = np.flip(object_support_mask[-1], dim)
-
-    return (kernel_support_mask, object_support_mask)
-
-
 def blurKernelFromPositions(object_size, position_list, illum_list, flip_kernels=False, use_phase_ramp=False,
-                            pos_perturbation=None, dtype=default_dtype, backend=default_backend):
+                            pos_perturbation=None, dtype=ut.DEFAULT_DTYPE, backend='numpy'):
     """
     This function generates a single blur kernel from a list of positions and illuminations. not multiframe.
     """
@@ -541,9 +499,8 @@ def blurKernelFromPositions(object_size, position_list, illum_list, flip_kernels
             if not use_phase_ramp:
                 blur_kernel[y, x] += illum_list[position_index]
             else:
-                R = ops.PhaseRamp(blur_kernel.shape, dtype=dtype, backend=backend)
-                x_ = yp.astype(np.asarray((y - object_size[0] // 2, x - object_size[1] // 2)), R.dtype)
-                ramp = yp.reshape(R * x_, blur_kernel.shape)
+                x_ = ut.astype(np.asarray((y - object_size[0] // 2, x - object_size[1] // 2)), dtype)
+                ramp = np.reshape(linops.phase_ramp(blur_kernel.shape, x_, dtype=dtype), blur_kernel.shape)
                 blur_kernel += (ramp * illum_list[position_index])
 
     if use_phase_ramp:
@@ -655,143 +612,10 @@ def getPositionListBoundingBox(kernel_position_list, use_mean=False):
                             min(mean_x, bounding_box[2]),
                             max(mean_x, bounding_box[3])]
     # Create ROI object
-    kernel_support_roi = yp.Roi(start=(int(round(bounding_box[0])), int(round(bounding_box[2]))),
+    kernel_support_roi = Roi(start=(int(round(bounding_box[0])), int(round(bounding_box[2]))),
                                 end=(int(round(bounding_box[1])), int(round(bounding_box[3]))))
 
     return(kernel_support_roi)
-
-######################################################################################################
-##################################### AUTOCALIBRATION ################################################
-######################################################################################################
-
-
-class BsplineND():
-    # from http://pythology.blogspot.com/2017/07/nd-b-spline-basis-functions-with-scipy.html
-    def __init__(self, knots, degree=3, periodic=False):
-        """
-        :param knots: a list of the spline knots with ndim = len(knots)
-
-        TODO (sarah) incorporate 2d aspect?
-        """
-        self.ndim = len(knots)
-        self.splines = []
-        self.knots = knots
-        self.degree = degree
-        for idim, knots1d in enumerate(knots):
-            nknots1d = len(knots1d)
-            y_dummy = np.zeros(nknots1d)
-            knots1d, coeffs, degree = sp.interpolate.splrep(knots1d, y_dummy, k=degree,
-                                                per=periodic)
-            self.splines.append((knots1d, coeffs, degree))
-        self.ncoeffs = [len(coeffs) for knots, coeffs, degree in self.splines]
-
-    def evaluate_independent(self, position):
-        """
-        :param position: a numpy array with size [ndim, npoints]
-        :returns: a numpy array with size [nspl1, nspl2, ..., nsplN, npts]
-                  with the spline basis evaluated at the input points
-        """
-        ndim, npts = position.shape
-
-        values_shape = self.ncoeffs + [npts]
-        values = np.empty(values_shape)
-        ranges = [range(icoeffs) for icoeffs in self.ncoeffs]
-        for icoeffs in itertools.product(*ranges):
-            values_dim = np.empty((ndim, npts))
-            for idim, icoeff in enumerate(icoeffs):
-                coeffs = [1.0 if ispl == icoeff else 0.0 for ispl in
-                          range(self.ncoeffs[idim])]
-                values_dim[idim] = sp.interpolate.splev(
-                        position[idim],
-                        (self.splines[idim][0], coeffs, self.degree))
-
-            values[icoeffs] = np.product(values_dim, axis=0)
-        return values
-
-    def evaluate(self, position):
-        assert self.weights is not None, "Must specify coefficients with set_coeffs()"
-        values = self.evaluate_independent(position)
-        return self.weights.dot(values)
-
-    def set_weights(self, weights):
-        assert len(weights) == self.ncoeffs[0], "must input correct number of weights"
-        self.weights = weights
-
-def get_basis_splines(extent, num_basis_fn):
-    knotsx = np.linspace(0,extent-1,num_basis_fn)
-    bspline = BsplineND([knotsx])
-    pointsx1d = np.linspace(knotsx[0], knotsx[-1], extent)
-    basis_matrix = bspline.evaluate_independent(pointsx1d[None, :])
-    return basis_matrix[:num_basis_fn].T
-
-
-def constructAlternatingMin(illuminations, shifts, image_size, n_frames, y):
-    assert False, "DEPRECIATED, try getAutocalibrationFns"
-
-def positions_to_splines(spl_basis, pos):
-    # TODO (sarah) can be implemented as matrix inversion
-    return np.linalg.pinv(spl_basis.T.dot(spl_basis)).dot(spl_basis.T.dot(pos))
-
-    # def gradw(w):
-    #     return spl_basis.T.dot( pos - spl_basis.dot(w))
-    # for i in range(100):
-    #     w = w + 0.1 * gradw(w)
-    # return w
-
-def get_monotone_projection(spline_basis):
-    A = spline_basis[:-1] - spline_basis[1:]
-    return lambda x: project_inequality(A, x)
-
-def project_inequality(A, x):
-    # projection onto Ax <= 0
-    # TODO assumes A is real
-    # TODO check that this is actually working: seems that resulting x is in full A nullspace...
-    # assert len(x.shape==2)
-    A_active = A[np.where(A.dot(x) > 0)[0]]
-    if A_active.shape[0] == 0:
-        return x
-    if len(A_active.shape) < 2:
-        A_active = np.expand_dims(A_active,1)
-    AAinv = np.linalg.pinv(A_active.dot(A_active.T))
-    P = A_active.T.dot(AAinv).dot(A_active)
-    Px = P.dot(x)
-    return x - Px
-
-def getAutocalibrationFns(y, object_size, illums, basis_y, basis_x, weights_initial, object_initial,
-                         dtype=None, backend=None, verbose=False):
-    if verbose: print("generating BlurKernelBasis operator")
-    Hsum = ops.BlurKernelBasis(object_size, (basis_y, basis_x), illums,
-                            dtype=dtype, backend=backend, verbose=verbose)
-    F = ops.FourierTransform(object_size, dtype=dtype, backend=backend, normalize=False)
-
-    if verbose: print("defining diagonalized components")
-    D_weights = ops.Diagonalize((Hsum * weights_initial).reshape(object_size), \
-                                label='D_{shift}', dtype=dtype, backend=backend)
-    # TODO (sarah) use windowing here
-    D_object = ops.Diagonalize(F * object_initial, \
-                               label='D_{object}', dtype=dtype, backend=backend)
-
-    # Forward models
-    if verbose: print("defining forward models")
-    A_object = F.H * D_weights * F
-    A_weights = F.H * D_object * Hsum
-
-    # Objectives
-    if verbose: print("defining objectives")
-    L2 = ops.L2Norm(object_size, dtype=dtype, backend=backend)
-    objective_object = L2 * (A_object - y)
-    objective_weights = L2 * (A_weights - y)
-
-    np_dtype = yp.getNativeDatatype(F.dtype, F.backend)
-
-    objective_object_set_weights = lambda weights: objective_object.setArgument('D_{shift}', \
-                                                                    Hsum * np.asarray(weights).astype(np_dtype))
-    objective_weights_set_object = lambda object_update: objective_weights.setArgument('D_{object}', \
-                                                            F * np.asarray(object_update).astype(np_dtype))
-    objectives = [objective_object, objective_weights]
-    update_fns = [objective_object_set_weights, objective_weights_set_object]
-    return objectives, update_fns
-
 
 def tand(x):
     return float(np.tan(x * np.pi / 180))
@@ -846,7 +670,7 @@ def genRandInitialization(n, beta, bounds=[0.0, 1.0], remainder=False):
         blurVec[zeroIdx[0]] = (beta * n) % 1
 
     # Compute Condition Number
-    condNum = max(abs(fftpack.fft(mask))) / min(abs(fftpack.fft(mask)))
+    condNum = max(abs(np.fft.fft(mask))) / min(abs(np.fft.fft(mask)))
 
     return blurVec, condNum
 
@@ -941,7 +765,7 @@ def genKernelMapCol(colIdx, innerKernelMap, outerKernelMap, kernelSupport=None, 
         if supportThreshold > 0:
             support = np.abs(kernelMapCol) > supportThreshold
         else:
-            support = ones(innerKernelMap[:, :, 0].reshape(-1).shape)
+            support = np.ones(innerKernelMap[:, :, 0].reshape(-1).shape)
     else:
         support = kernelSupport
     kernelMapCol = kernelMapCol[support.reshape(-1) > 0]
@@ -1621,10 +1445,10 @@ def genCircularBlurKernelMapposition_list(kernel_size, radius, sweepAngle, start
     """
 
     # Generate circle
-    x = np.arange(-(kernel_size[1] - np.mod(kernel_size[1], 2)) / 2, (kernel_size[1] -
-                                                                      np.mod(kernel_size[1], 2)) / 2 - (np.mod(kernel_size[1], 2) == 1)) - center[1]
-    y = np.arange(-(kernel_size[0] - np.mod(kernel_size[0], 2)) / 2, (kernel_size[0] -
-                                                                      np.mod(kernel_size[0], 2)) / 2 - (np.mod(kernel_size[0], 2) == 1)) - center[0]
+    x = np.arange(-(kernel_size[1] - np.np.mod(kernel_size[1], 2)) / 2, (kernel_size[1] -
+                                                                      np.np.mod(kernel_size[1], 2)) / 2 - (np.np.mod(kernel_size[1], 2) == 1)) - center[1]
+    y = np.arange(-(kernel_size[0] - np.np.mod(kernel_size[0], 2)) / 2, (kernel_size[0] -
+                                                                      np.np.mod(kernel_size[0], 2)) / 2 - (np.np.mod(kernel_size[0], 2) == 1)) - center[0]
     [xx, yy] = np.meshgrid(x, y)
     fullCircle = np.abs((xx ** 2 + yy ** 2) - radius ** 2) < 40
 
@@ -1668,10 +1492,10 @@ def genCircularBlurKernelMapposition_listN(kernel_size, radius, n_positions, sta
     """
 
     # Generate circle
-    x = np.arange(-(kernel_size[1] - mod(kernel_size[1], 2)) / 2, (kernel_size[1] -
-                                                                   mod(kernel_size[1], 2)) / 2 - (mod(kernel_size[1], 2) == 1))
-    y = np.arange(-(kernel_size[0] - mod(kernel_size[0], 2)) / 2, (kernel_size[0] -
-                                                                   mod(kernel_size[0], 2)) / 2 - (mod(kernel_size[0], 2) == 1))
+    x = np.arange(-(kernel_size[1] - np.mod(kernel_size[1], 2)) / 2, (kernel_size[1] -
+                                                                   np.mod(kernel_size[1], 2)) / 2 - (np.mod(kernel_size[1], 2) == 1))
+    y = np.arange(-(kernel_size[0] - np.mod(kernel_size[0], 2)) / 2, (kernel_size[0] -
+                                                                   np.mod(kernel_size[0], 2)) / 2 - (np.mod(kernel_size[0], 2) == 1))
     [xx, yy] = np.meshgrid(x, y)
     fullCircle = np.abs((xx**2 + yy**2) - radius**2) < 40
 
@@ -2050,8 +1874,8 @@ def genIllumDev(blurMapCol, nColumns, throughputCoeff, sumobj=False, verbose=Fal
 
     while True:
         try:
-            xstar, it = optimize_pgd.projectedIterativeMax(
-                x0, obj, f, grad, projis, optimize_pgd.backtrackingstep, optimize_pgd.smoothing_pow, maxiter, verbose=verbose)
+            xstar, it = pgd.projectedIterativeMax(
+                x0, obj, f, grad, projis, pgd.backtrackingstep, pgd.smoothing_pow, maxiter, verbose=verbose)
 
             break
         except ArithmeticError:
@@ -2142,7 +1966,7 @@ def plotIllumMap(illumVector, ledPointListNa, markerSz=50, plot_colormap="Grays"
         'x': list(ledPointListNa[:, 0]),
         'y': list(ledPointListNa[:, 1]),
         'mode': 'markers',
-        'text': list(arange(0, size(ledPointListNa[:, 1]))),
+        'text': list(np.arange(0, np.size(ledPointListNa[:, 1]))),
         'marker': {
             'sizemode': 'area',
             'sizeref': 200000,
@@ -2155,7 +1979,7 @@ def plotIllumMap(illumVector, ledPointListNa, markerSz=50, plot_colormap="Grays"
     figure['data'].append(data_dict)
 
     # make frames
-    for position in arange(0, n_positions):
+    for position in np.arange(0, n_positions):
         ledVals = illumVector[position, :]
         frame = {'data': [], 'name': str(position)}
 
@@ -2163,7 +1987,7 @@ def plotIllumMap(illumVector, ledPointListNa, markerSz=50, plot_colormap="Grays"
             'x': list(ledPointListNa[:, 0]),
             'y': list(ledPointListNa[:, 1]),
             'mode': 'markers',
-            'text': list(arange(0, size(ledPointListNa[:, 1]))),
+            'text': list(np.arange(0, np.size(ledPointListNa[:, 1]))),
             'marker': {
                 'sizemode': 'area',
                 'sizeref': 200000,
@@ -2188,131 +2012,3 @@ def plotIllumMap(illumVector, ledPointListNa, markerSz=50, plot_colormap="Grays"
 
     figure['layout']['sliders'] = [sliders_dict]
     iplot(figure)
-
-
-class BlurKernelBasis(ops.Operator):
-    # inputs are weights for singular_vectors functions
-    # operator first translates weights to a position,
-    # then returns the resulting PhaseRamp
-
-    # TODO in progress
-
-    def __init__(self, N, basis, illums, verbose=False, dtype=None, backend=None, label='R'):
-
-        # Configure backend and datatype
-        backend = backend if backend is not None else yp.config.default_backend
-        dtype = dtype if dtype is not None else yp.config.default_dtype
-
-        x = np.arange(-N[1] / 2, N[1] / 2, 1.0) / N[1]
-        y = np.arange(-N[0] / 2, N[0] / 2, 1.0) / N[0]
-        xx, yy = np.meshgrid(x, y)
-        ry = -2 * np.pi * yy
-        rx = -2 * np.pi * xx
-
-        self.verbose = verbose
-
-        # Convert to the correct dtype and backend: TODO why through numpy?
-        dtype_np = yp.getNativeDatatype(dtype, 'numpy')
-        self.rx = yp.changeBackend(rx.astype(dtype_np), backend)
-        self.ry = yp.changeBackend(ry.astype(dtype_np), backend)
-        basis_y, basis_x = basis
-        self.basis_y = yp.changeBackend(basis_y.astype(dtype_np), backend)
-        self.basis_x = yp.changeBackend(basis_x.astype(dtype_np), backend)
-        self.ndim_y = yp.shape(self.basis_y)[1]
-        self.ndim_x = yp.shape(self.basis_x)[1]
-        self.illums = illums # TODO backend and dtype?
-
-        # TODO remove this
-        np.seterr(all='warn')
-
-        super(self.__class__, self).__init__((N, (self.ndim_y + self.ndim_x, 1)), dtype, backend, smooth=True, label=label,
-                                             forward=self._forward, gradient=self._gradient,
-                                             convex=False,  repr_latex=self._latex)
-
-    def _latex(self, latex_input=None):
-        if latex_input is not None:
-            return 'e^{-i2\\pi (\\vec{k} \\cdot S \\cdot' + latex_input + ')}'
-        else:
-            return 'e^{-i2\\pi (\\vec{k} \\cdot S \\cdot [\\cdot ])}'
-
-    def _forward(self, x, y):
-        # TODO does this indexing work when not numpy
-        weight_y = x[:self.ndim_y]
-        weight_x = x[self.ndim_y:]
-        rys = yp.matmul(self.basis_y, weight_y)
-        rxs = yp.matmul(self.basis_x, weight_x)
-        print('forward with position:', np.amax(rys), np.amax(rxs))
-        # TODO: need to set this as zero otherwise weird results
-        y[:] = yp.zeros(self.M, dtype=self.dtype, backend=self.backend)
-        for t in range(len(self.illums)):
-            y[:] += self._single_forward(self.illums[t], [rys[t], rxs[t]])
-            # self.illums[t] * exp(self.ry * scalar(rys[t]) + self.rx * scalar(rxs[t]))
-
-    def _single_forward(self, illum, r):
-        # using euler's formula instead of
-        # exp(self.ry * scalar(r[0]) + self.rx * scalar(r[1]))
-        inner = self.ry * yp.scalar(r[0]) + self.rx * yp.scalar(r[1])
-        # if self.verbose: print(np.amax(np.abs(inner)), r)
-        try:
-            result = illum * (yp.cos(inner) + 1j * yp.sin(inner))
-        except RuntimeWarning as e:
-            print(e, illum, r)
-        return result
-
-    def _gradient(self, x=None, inside_operator=None):
-        from .stack import Vstack
-        weight_y = x[:self.ndim_y]
-        weight_x = x[self.ndim_y:]
-        rys = yp.matmul(self.basis_y, weight_y)
-        rxs = yp.matmul(self.basis_x, weight_x)
-        print(np.amax(np.abs(rys)), np.amax(np.abs(rxs)), np.amax(self.illums))
-
-        # sum across t
-        if self.verbose: print('computing over t')
-        sum_exp_y = yp.zeros([self.ndim_y, self.M[0], self.M[1]])
-        sum_exp_x = yp.zeros([self.ndim_x, self.M[0], self.M[1]])
-        for t in range(len(self.illums)):
-            if self.verbose: print(t, end=' ')
-            forward_t = self._single_forward(self.illums[t], [rys[t], rxs[t]])
-            for i in range(max(self.ndim_y, self.ndim_x)):
-                if i < self.ndim_y: sum_exp_y[i,:,:] += self.basis_y[t, i] * forward_t
-                if i < self.ndim_x: sum_exp_x[i,:,:] += self.basis_x[t, i] * forward_t
-        S = ops.Sum(self.M, self.dtype, self.backend)
-        if self.verbose: print('\nconstructing columns')
-        column_list_y = []; column_list_x = []
-        for i in range(max(self.ndim_y, self.ndim_x)):
-            if self.verbose: print(i, end=' ')
-            if i < self.ndim_y: column_list_y.append(S * ops.Diagonalize(conj(1j * self.ry) * yp.conj(sum_exp_y[i])))
-            if i < self.ndim_x: column_list_x.append(S * ops.Diagonalize(conj(1j * self.rx) * yp.conj(sum_exp_x[i])))
-        print('\n')
-        G = ops.Vstack(column_list_y + column_list_x)
-        return ops._GradientOperator(G)
-
-    def _gradient_lowmem(self, x=None, inside_operator=None):
-        from .stack import Vstack
-        weight_y = x[:self.ndim_y]
-        weight_x = x[self.ndim_y:]
-        rys = yp.matmul(self.basis_y, weight_y)
-        rxs = yp.matmul(self.basis_x, weight_x)
-        print(np.amax(np.abs(rys)), np.amax(np.abs(rxs)))
-
-        S = ops.Sum(self.M, self.dtype, self.backend)
-        column_list_y = []; column_list_x = []
-        for i in range(max(self.ndim_y, self.ndim_y)):
-            if self.verbose:
-                print('computing for column', i)
-            forward_0 = self._single_forward(self.illums[0], [rys[0], rxs[0]])
-            if i < self.ndim_y:
-                sum_exp_y = self.basis_y[0, i] * forward_0
-            if i < self.ndim_x:
-                sum_exp_x = self.basis_x[0, i] * forward_0
-            for t in range(1, len(self.illums)):
-                forward_t = self._single_forward(self.illums[t], [rys[t], rxs[t]])
-                if i < self.ndim_y:
-                    sum_exp_y += self.basis_y[t, i] * forward_t
-                if i < self.ndim_x: sum_exp_x += self.basis_x[t, i] * forward_t
-            if i < self.ndim_y: column_list_y.append(S * ops.Diagonalize(conj(1j * self.ry) * yp.conj(sum_exp_y)))
-            if i < self.ndim_x: column_list_x.append(S * ops.Diagonalize(conj(1j * self.rx) * yp.conj(sum_exp_x)))
-
-        G = ops.Vstack(column_list_y + column_list_x)
-        return ops._GradientOperator(G)

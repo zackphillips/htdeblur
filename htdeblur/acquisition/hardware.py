@@ -22,9 +22,9 @@ import os, sys
 # from libwallerlab.utilities import display
 # from libwallerlab.utilities import roi
 import json
-import llops as yp
-from llops import Roi
-import comptic
+from .. import _util as ut
+from ..roi import Roi
+from ..dataset import demosaic
 
 # Hardware-only dependencies. Install with `pip install htdeblur[acquisition]`;
 # Micro-Manager (MMCorePy) must be installed separately.
@@ -828,7 +828,7 @@ class CameraController(MicroManagerHardwareController):
         # self.mmc.setCameraDevice(self.device_name)
 
         # Define camera roi
-        self.roi = yp.Roi(shape=(self.getImageHeight(), self.getImageWidth()))
+        self.roi = Roi(shape=(self.getImageHeight(), self.getImageWidth()))
         self.shape = (self.getImageHeight(), self.getImageWidth())
 
     def fov(self, magnification):
@@ -963,13 +963,13 @@ class CameraController(MicroManagerHardwareController):
         if zoom_factor is not None:
             start = [sh // 2 - sh // int(2 * zoom_factor) for sh in (self.roi.shape)]
             shape = [sh // zoom_factor for sh in self.roi.shape]
-            roi = yp.Roi(start=start, shape=shape)
+            roi = Roi(start=start, shape=shape)
 
         # Snap first image to populate buffer
         img_0 = self.snap(roi=roi)
 
         if self.is_color:
-            img_0 = display.demosaicFrameDeconv(img_0, white_balance=True, bayer_coupling_matrix=self.bayer_coupling_matrix)
+            img_0 = demosaic(img_0, white_balance=True, bayer_coupling_matrix=self.bayer_coupling_matrix)
 
         im = ax.imshow(img_0, interpolation='nearest',
                            animated=True, cmap = 'gray', vmin=0, vmax=2**16 - 1)
@@ -1005,7 +1005,7 @@ class CameraController(MicroManagerHardwareController):
                     if roi is not None:
                         img = img[roi.slice]
                     if self.is_color:
-                        im.set_data(display.demosaicFrameDeconv(img,
+                        im.set_data(demosaic(img,
                             bayer_coupling_matrix=self.bayer_coupling_matrix))
                     else:
                         im.set_data(img)

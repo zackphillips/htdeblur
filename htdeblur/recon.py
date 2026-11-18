@@ -6,15 +6,16 @@ import skimage
 import os
 
 # Comptic imports
-from comptic.imaging import pupil, otf
-from comptic import registration, containers
+from .optics import otf
+from . import registration
+from .dataset import Reconstruction as ReconstructionResult
 
 from . import blurkernel
 
 # Llops imports
-import llops.operators as ops
-import llops as yp
-from llops.solvers import iterative, objectivefunctions, regularizers
+from . import _util as ut
+from . import linops
+from .roi import Roi, get_overlapping_region
 
 class Reconstruction():
     """
@@ -49,8 +50,8 @@ class Reconstruction():
         self.verbose = kwargs.pop('verbose', False)
 
         # Store dtype and backend
-        self.dtype = dtype if dtype is not None else yp.config.default_dtype
-        self.backend = backend if backend is not None else yp.config.default_backend
+        self.dtype = dtype if dtype is not None else ut.DEFAULT_DTYPE
+        self.backend = backend if backend is not None else 'numpy'
 
         # Store dataset
         self.dataset = dataset
@@ -142,7 +143,7 @@ class Reconstruction():
     def _getSegmentDirections(self, blur_axis=1):
         """Calculate directions of each linear segment in the dataset."""
         self.frame_segment_direction_list = []
-        self.segments_in_dataset = yp.unique(self.frame_segment_list)
+        self.segments_in_dataset = ut.unique(self.frame_segment_list)
         for segment_index in self.segments_in_dataset:
             frames_in_segment = [frame_index for frame_index in range(self.dataset.shape[0]) if self.frame_segment_list[frame_index] == segment_index]
 
@@ -162,11 +163,11 @@ class Reconstruction():
             segment_direction = self.frame_segment_direction_list[index]
 
             # Determine blur kernel shape
-            blur_kernel_shape = [(yp.next_fast_even_number(sh_roi + sh)) for (sh_roi, sh) in zip(blur_roi.shape, self.dataset.frame_shape)]
+            blur_kernel_shape = [(ut.next_fast_even_number(sh_roi + sh)) for (sh_roi, sh) in zip(blur_roi.shape, self.dataset.frame_shape)]
 
             # Determine convolution support
             convolution_support_start = [kernel_start - sh for (kernel_start, sh) in zip(blur_roi.start, self.dataset.frame_shape)]
-            self.roi_list_convolution.append(yp.Roi(start=convolution_support_start,
+            self.roi_list_convolution.append(Roi(start=convolution_support_start,
                                                     shape=blur_kernel_shape))
 
             # Determine measurement support within convolution
@@ -179,7 +180,7 @@ class Reconstruction():
                 measurement_support_start = [s // 2 for s in blur_roi.shape]
 
             # Assign measurement support
-            self.roi_list_measurement_support.append(yp.Roi(start=measurement_support_start,
+            self.roi_list_measurement_support.append(Roi(start=measurement_support_start,
                                                             shape=self.dataset.frame_shape,
                                                             input_shape=blur_kernel_shape))
 
@@ -210,7 +211,7 @@ class Reconstruction():
         for index, (blur_vector, blur_roi) in enumerate(zip(self.blur_vector_list, self.blur_vector_roi_list)):
 
             # Determine blur kernel shape
-            blur_kernel_shape = [yp.next_fast_even_number(sh_roi + sh) for (sh_roi, sh) in zip(blur_roi.shape, self.dataset.frame_shape)]
+            blur_kernel_shape = [ut.next_fast_even_number(sh_roi + sh) for (sh_roi, sh) in zip(blur_roi.shape, self.dataset.frame_shape)]
 
             # Generate blur kernel
 
@@ -222,11 +223,11 @@ class Reconstruction():
 
             # Optionally filter to OTF support
             if self.psf is not None:
-                self.psf /= yp.scalar(yp.sum(self.psf))
-                blur_kernel = yp.convolve(blur_kernel, self.psf)
+                self.psf /= ut.scalar(ut.sum(self.psf))
+                blur_kernel = ut.convolve(blur_kernel, self.psf)
 
             # Normalize
-            blur_kernel /= yp.scalar(yp.sum(blur_kernel))
+            blur_kernel /= ut.scalar(ut.sum(blur_kernel))
 
             # Append to list
             self.blur_kernel_list.append(blur_kernel)
@@ -273,13 +274,13 @@ class Reconstruction():
         for frame_index, frame in enumerate(self.dataset.frame_list):
 
             # Perform deep copy of measurements
-            frame = yp.dcopy(frame)
+            frame = np.copy(frame)
 
             # Store mean
-            mean_values.append(yp.scalar(yp.mean(frame)))
+            mean_values.append(ut.scalar(ut.mean(frame)))
 
             # Convert to floating point
-            frame = yp.cast(frame, self.dtype, self.backend)
+            frame = ut.cast(frame, self.dtype)
 
             # Apply normalization if scale values are not none
             if self.measurement_normalization is not None:
@@ -287,9 +288,9 @@ class Reconstruction():
 
             # Apply normalizaiton vectors if they are not nont
             if 'normalization' in self.dataset.metadata.calibration:
-                normalization_y = yp.cast(self.dataset.metadata.calibration['normalization']['frame_normalization_y'][self.dataset.frame_mask[frame_index]], self.dtype, self.backend)
-                normalization_x = yp.cast(self.dataset.metadata.calibration['normalization']['frame_normalization_x'][self.dataset.frame_mask[frame_index]], self.dtype, self.backend)
-                frame[:] = frame * yp.outer(normalization_y, normalization_x)
+                normalization_y = ut.cast(self.dataset.metadata.calibration['normalization']['frame_normalization_y'][self.dataset.frame_mask[frame_index]], self.dtype)
+                normalization_x = ut.cast(self.dataset.metadata.calibration['normalization']['frame_normalization_x'][self.dataset.frame_mask[frame_index]], self.dtype)
+                frame[:] = frame * np.outer(normalization_y, normalization_x)
 
             # Pad frame using measurement support ROI and append to list
             self.y_list.append(frame)
@@ -301,11 +302,11 @@ class Reconstruction():
 
         # Calculate mean value and normalize
         if self.normalize:
-            mean = yp.mean(mean_values)
+            mean = ut.mean(mean_values)
             self.y_list = [y / mean for y in self.y_list]
         else:
             # Normalize all measurements to have the same mean as before
-            self.y_list = [y / yp.mean(y) * mean for (y, mean) in zip(self.y_list, mean_values)]
+            self.y_list = [y / ut.mean(y) * mean for (y, mean) in zip(self.y_list, mean_values)]
 
     def _gen_forward_operators(self):
         """Generate forward operators to be used by _gen_optimizer functions."""
@@ -317,34 +318,32 @@ class Reconstruction():
         for blur_kernel, measurement_roi in zip(self.blur_kernel_list, self.roi_list_measurement_support):
 
             # Generate and append convolution operator
-            C_list.append(ops.Convolution(blur_kernel,
+            C_list.append(linops.Convolution(blur_kernel,
                                           # mode='circular',
                                           pad_value=self.pad_value,
-                                          dtype=self.dtype,
-                                          backend=self.backend))
+                                          dtype=self.dtype))
 
             # Generate and append convolution support crop operator
-            R_list.append(ops.Crop(roi=measurement_roi,
+            R_list.append(linops.Crop(roi=measurement_roi,
                                    N=blur_kernel_size,
                                    pad_value=0,
-                                   dtype=self.dtype,
-                                   backend=self.backend))
+                                   dtype=self.dtype))
 
         # Generate full convolution operator
-        self.C = ops.Dstack(C_list)
+        self.C = linops.DiagStack(C_list)
 
         # Generate full convolution support crop operator
-        self.R = ops.Dstack(R_list)
+        self.R = linops.DiagStack(R_list)
 
         # Create segmentation operator (convolution support)
-        self.G = ops.Segmentation(self.roi_list_convolution,
+        self.G = linops.Segmentation(self.roi_list_convolution,
                                   alpha_blend_size=self.alpha_blend_distance,
-                                  dtype=self.dtype, backend=self.backend)
+                                  dtype=self.dtype)
 
         # Create segmentation operator (measurement support)
-        self.G_meas = ops.Segmentation(self.roi_list,
+        self.G_meas = linops.Segmentation(self.roi_list,
                                        alpha_blend_size=self.alpha_blend_distance,
-                                       dtype=self.dtype, backend=self.backend)
+                                       dtype=self.dtype)
 
     def applyFrameDependentOffset(self, offset=26, axis=1):
         """Applys a direction-dependant position offset to ROIs."""
@@ -354,7 +353,7 @@ class Reconstruction():
 
             # Determine the direction of this segment
             frame_segment_number = self.frame_segment_list[index]
-            left_to_right_directio5n = self.frame_segment_direction_list[frame_segment_number - min(self.frame_segment_list)]
+            left_to_right_direction = self.frame_segment_direction_list[frame_segment_number - min(self.frame_segment_list)]
 
             # number of positions before this segment
             segment_index = len([segment for segment in self.frame_segment_list[:index] if segment == self.frame_segment_list[index]])
@@ -394,19 +393,10 @@ class Reconstruction():
         self._gen_forward_operators()
 
     def _invert(self, inverse_regularizer=1e-6):
-        """Invert a forward operator."""
-        # Check if forward model is invertable before inverting
-        if self.A.invertable:
-            # Perform analytic inverse
-            self.object_recovered = self.A.inverse(inverse_regularizer=inverse_regularizer) * self.y
-        elif self.A.inner_operators.invertable:
-            # Apply adjoint of forward operator to measurement before inverting
-            _A = self.A.inner_operators
-            _y = self.A.outer_operator.H * self.y
-
-            # Perform analytic inverse
-            self.object_recovered = _A.inverse(inverse_regularizer=inverse_regularizer) * _y
-        else:
+        """Direct (Tikhonov-regularized) inverse of the forward model, where one exists."""
+        try:
+            self.object_recovered = self.A.inverse(self.y, reg=inverse_regularizer)
+        except NotImplementedError:
             raise ValueError('Forward model is not invertable.')
 
     def reconstruct(self, iteration_count, reg_types={},
@@ -488,7 +478,7 @@ class Reconstruction():
         assert self.A is not None, "Generate forward model before calling _gen_initialization."
 
         # Generate initialization
-        return yp.ones(self.A.N, dtype=self.dtype, backend=self.backend) * yp.mean(self.y)
+        return ut.ones(self.A.N, dtype=self.dtype) * ut.mean(self.y)
 
     def _get_optimizer_static(self, reg_types={}):
         """
@@ -501,16 +491,16 @@ class Reconstruction():
 
         # Generate measurement vector and forward operator
         self.A = self.G_meas
-        self.y = ops.VecStack(self.y_list)
+        self.y = linops.vector_stack(self.y_list)
 
         # Create data fidelity objective
-        data_fidelity_term = objectivefunctions.L2(self.A, self.y)
+        data_fidelity_term = linops.L2Data(self.A, self.y)
 
         # Generate cost function (with regularization)
         cost_function = get_cost_function(data_fidelity_term, reg_types)
 
         # Generate optimizer
-        optimizer = iterative.Fista(cost_function)
+        optimizer = linops.Fista(cost_function)
 
         return optimizer, None
 
@@ -532,24 +522,24 @@ class Reconstruction():
             C = self.C[frame_number]
 
             # Get measurement support crop
-            R = ops.Crop(self.C.stack_operators[frame_number].M, yp.shape(self.y_list[frame_number]),
+            R = linops.Crop(self.C.stack_operators[frame_number].M, np.shape(self.y_list[frame_number]),
                          center=True, pad_value='mean')
 
             # Generate forward operator and measurement
             A_list.append(R * C)
 
         # Generate new convolution operators which are the same size as G_meas
-        self.A = ops.Dstack(A_list) * self.G
-        self.y = ops.VecStack(self.y_list)
+        self.A = linops.DiagStack(A_list) * self.G
+        self.y = linops.vector_stack(self.y_list)
 
         # Create data fidelity objective
-        data_fidelity_term = objectivefunctions.L2(self.A, self.y)
+        data_fidelity_term = linops.L2Data(self.A, self.y)
 
         # Generate cost function (with regularization)
         cost_function = get_cost_function(data_fidelity_term, reg_types)
 
         # Generate optimizer
-        optimizer = iterative.Fista(cost_function)
+        optimizer = linops.Fista(cost_function)
 
         return optimizer, None
 
@@ -560,13 +550,13 @@ class Reconstruction():
                            values determine the coefficient
         """
 
-        assert len(yp.unique(self.frame_segment_list)) == 1, "Only single-segment reconstructions are supported!"
+        assert len(ut.unique(self.frame_segment_list)) == 1, "Only single-segment reconstructions are supported!"
 
         # Store regularization types
         self.reg_types_recon = reg_types
 
         # Pad y for convolution support
-        padded_size = [yp.next_fast_even_number(int(sz + blur_sz)) for (sz, blur_sz) in zip(self.G_meas.N, self.blur_vector_roi_list[0].shape)]
+        padded_size = [ut.next_fast_even_number(int(sz + blur_sz)) for (sz, blur_sz) in zip(self.G_meas.N, self.blur_vector_roi_list[0].shape)]
 
         # Generate blur kernel with this size
         blur_kernel = blurkernel.fromVector(self.blur_vector_list[0],
@@ -576,26 +566,26 @@ class Reconstruction():
                                             position='center')
 
         # Stitch y
-        self.y = self.G_meas.inv * ops.VecStack(self.y_list)
-        self.y[yp.isnan(self.y)] = 0.0
+        self.y = self.G_meas.inv * linops.vector_stack(self.y_list)
+        self.y[np.isnan(self.y)] = 0.0
 
         # Generate convolutional forward model
-        C = ops.Convolution(blur_kernel, mode='circular')
+        C = linops.Convolution(blur_kernel, mode='circular')
 
         # Create pad operator
-        CR = ops.Crop(padded_size, self.G_meas.N, center=True, pad_value='mean')
+        CR = linops.Crop(padded_size, self.G_meas.N, center=True, pad_value='mean')
 
         # Create forward operator
         self.A = CR * C
 
         # Create data fidelity objective
-        data_fidelity_term = objectivefunctions.L2(self.A, self.y)
+        data_fidelity_term = linops.L2Data(self.A, self.y)
 
         # Generate cost function (with regularization)
         cost_function = get_cost_function(data_fidelity_term, reg_types)
 
         # Generate Optimizer
-        optimizer = iterative.Fista(cost_function)
+        optimizer = linops.Fista(cost_function)
 
         return optimizer, None
 
@@ -607,13 +597,13 @@ class Reconstruction():
                            values determine the coefficient
         """
 
-        assert len(yp.unique(self.frame_segment_list)) == 1, "Only single-segment reconstructions are supported!"
+        assert len(ut.unique(self.frame_segment_list)) == 1, "Only single-segment reconstructions are supported!"
 
         # Store regularization types
         self.reg_types_recon = reg_types
 
         # Pad y for convolution support
-        padded_size = [yp.next_fast_even_number(sz + blur_sz) for (sz, blur_sz) in zip(self.G_meas.N, self.blur_vector_roi_list[0].shape)]
+        padded_size = [ut.next_fast_even_number(sz + blur_sz) for (sz, blur_sz) in zip(self.G_meas.N, self.blur_vector_roi_list[0].shape)]
 
         # Generate blur kernel with this size
         blur_kernel = blurkernel.fromVector(self.blur_vector_list[0],
@@ -623,33 +613,33 @@ class Reconstruction():
                                             position='center')
 
         # Fourier Transform Blur Kernel
-        blur_kernel_f = yp.Ft(blur_kernel)
+        blur_kernel_f = ut.Ft(blur_kernel)
 
         # Generate convolutional forward model
-        K = ops.Diagonalize(blur_kernel_f, dtype='complex32')
+        K = linops.Diagonalize(blur_kernel_f, dtype='complex32')
 
         # Create pad operator
-        CR = ops.Crop(padded_size, self.G_meas.N, center=True, pad_value='mean')
+        CR = linops.Crop(padded_size, self.G_meas.N, center=True, pad_value='mean')
 
         # Create forward operator
         self.A = K
 
         # Stitch y
-        self.y = CR.H*self.G_meas.inv * ops.VecStack(self.y_list)
-        self.y[yp.isnan(self.y)] = 0.0
-        self.y = yp.Ft(self.y)
+        self.y = CR.H*self.G_meas.inv * linops.vector_stack(self.y_list)
+        self.y[np.isnan(self.y)] = 0.0
+        self.y = ut.Ft(self.y)
 
         # Create data fidelity objective
-        data_fidelity_term = objectivefunctions.L2(self.A, self.y)
+        data_fidelity_term = linops.L2Data(self.A, self.y)
 
         # Generate cost function (with regularization)
         cost_function = get_cost_function(data_fidelity_term, reg_types, dtype='complex32')
 
         # Generate Optimizer
-        optimizer = iterative.Fista(cost_function)
+        optimizer = linops.Fista(cost_function)
 
         # Define post-solver function
-        post_opimize_function = lambda x: yp.real(yp.iFt(x))
+        post_opimize_function = lambda x: np.real(ut.iFt(x))
 
         return optimizer, post_opimize_function
 
@@ -664,7 +654,7 @@ class Reconstruction():
         self.reg_types_recon = reg_types
 
         # Generate crop operator
-        CR = ops.Crop(self.C.stack_operators[frame_number].M, yp.shape(self.y_list[frame_number]),
+        CR = linops.Crop(self.C.stack_operators[frame_number].M, np.shape(self.y_list[frame_number]),
                       center=True, pad_value='mean')
 
         # Generate forward operator and measurement
@@ -672,13 +662,13 @@ class Reconstruction():
         self.y = self.y_list[frame_number]
 
         # Create data fidelity objective
-        data_fidelity_term = objectivefunctions.L2(self.A, self.y)
+        data_fidelity_term = linops.L2Data(self.A, self.y)
 
         # Generate cost function (with regularization)
         cost_function = get_cost_function(data_fidelity_term, reg_types)
 
         # Create optimizer
-        optimizer = iterative.Fista(cost_function)
+        optimizer = linops.Fista(cost_function)
 
         # Post-optimization function
         def post_opimize_function(x):
@@ -697,41 +687,42 @@ class Reconstruction():
         self.reg_types_recon = reg_types
 
         # Generate crop operator
-        CR = ops.Crop(self.C.stack_operators[frame_number].M, yp.shape(self.y_list[frame_number]),
+        CR = linops.Crop(self.C.stack_operators[frame_number].M, np.shape(self.y_list[frame_number]),
                       center=True, pad_value='mean')
 
         # Generate forward operator and measurement
-        F = ops.FourierTransform(CR.M, dtype='complex32')
+        F = linops.FourierTransform(CR.M, dtype='complex32')
 
-        self.A = ops.Diagonalize(yp.conj(F * yp.astype((CR * self.blur_kernel_list[frame_number]), 'complex32')))
-        self.y = F * yp.astype(self.y_list[frame_number], 'complex32')
+        self.A = linops.Diagonalize(np.conj(F * ut.astype((CR * self.blur_kernel_list[frame_number]), 'complex32')))
+        self.y = F * ut.astype(self.y_list[frame_number], 'complex32')
 
         # Create data fidelity objective
-        data_fidelity_term = objectivefunctions.L2(self.A, self.y)
+        data_fidelity_term = linops.L2Data(self.A, self.y)
 
         # Generate cost function (with regularization)
         cost_function = get_cost_function(data_fidelity_term, reg_types)
 
         # Create optimizer
-        optimizer = iterative.Fista(cost_function)
+        optimizer = linops.Fista(cost_function)
 
         # Post-optimization function
         def post_opimize_function(x):
-            return yp.real(yp.iFt(x))
+            return np.real(ut.iFt(x))
 
         return optimizer, post_opimize_function
 
 
 
     def showRaw(self, clim=None, figsize=None, colorbar=False):
-        yp.display.listPlotFlat(self.y_list, figsize=figsize, clim=clim, colorbar=colorbar)
+        ut.list_plot_flat(self.y_list, figsize=figsize, clim=clim, colorbar=colorbar)
 
-    def showResult(self, clim=None, ax=None, colorbar=False, fig=None):
+    def showResult(self, clim=None, ax=None, colorbar=False, fig=None, figsize=None, adjust_contrast=False):
         if ax is None:
             if fig is None:
-                fig = plt.figure(kwargs.get(figsize), (10, 10 * yp.aspectRatio()))
+                shape = np.shape(self.object_recovered)
+                fig = plt.figure(figsize=figsize or (10, 10 * shape[0] / shape[1]))
             ax = plt.gca()
-        plot_object = np.abs(yp.changeBackend(self.object_recovered, 'numpy'))
+        plot_object = np.abs(np.asarray(self.object_recovered))
         if adjust_contrast:
             plot_object = skimage.filters.gaussian(plot_object,sigma=1)
             plot_object = skimage.exposure.equalize_hist(plot_object)
@@ -739,10 +730,10 @@ class Reconstruction():
 
     def showBackground(self):
         if type(self.estimated_background) is list:
-            yp.display.listPlotFlat(self.estimated_background[:10])
+            ut.list_plot_flat(self.estimated_background[:10])
         else:
             plt.figure()
-            plt.imshow(yp.real(self.estimated_background))
+            plt.imshow(np.real(self.estimated_background))
             plt.colorbar()
             plt.axis('off')
             plt.tight_layout()
@@ -757,17 +748,17 @@ class Reconstruction():
                 new_y = []
                 for i, y in enumerate(self.y_list):
                     new_y.append(self.R0_list[i].H * y)
-                i = plt.imshow(np.abs(yp.changeBackend(ops.VecStack(new_y), 'numpy')), cmap='gray')
+                i = plt.imshow(np.abs(np.asarray(linops.vector_stack(new_y))), cmap='gray')
             else:
-                i = plt.imshow((np.real(yp.changeBackend(self.y, 'numpy'))), cmap='gray')
+                i = plt.imshow((np.real(np.asarray(self.y))), cmap='gray')
             plt.title('Raw Data')
             plt.colorbar()
             plt.subplot(122)
         else:
-            aspect_ratio = yp.shape(self.object_recovered)[0] / yp.shape(self.object_recovered)[1] + 0.1
+            aspect_ratio = np.shape(self.object_recovered)[0] / np.shape(self.object_recovered)[1] + 0.1
             plt.figure(figsize=(figsize[0], figsize[0] * aspect_ratio))
 
-        plot_object = np.abs(yp.changeBackend(self.object_recovered, 'numpy'))
+        plot_object = np.abs(np.asarray(self.object_recovered))
         if adjust_contrast:
             plot_object = skimage.filters.gaussian(plot_object, sigma=1)
             plot_object = skimage.exposure.equalize_hist(plot_object)
@@ -782,15 +773,15 @@ class Reconstruction():
         if self.object_true is not None and self.object_true.shape == self.object_recovered.shape:
             plt.figure(figsize=(12, 5))
             plt.subplot(221)
-            plot_object = np.abs(yp.changeBackend(self.object_true, 'numpy'))
+            plot_object = np.abs(np.asarray(self.object_true))
             plt.imshow(plot_object, cmap='gray')
             plt.title('True')
             plt.subplot(223)
-            plot_object = np.abs(yp.changeBackend(self.object_recovered, 'numpy'))
+            plot_object = np.abs(np.asarray(self.object_recovered))
             plt.imshow(plot_object, cmap='gray')
             plt.title('Reconstruction')
             plt.subplot(222)
-            plot_object = np.abs(yp.changeBackend(self.object_recovered - self.object_true, 'numpy'))
+            plot_object = np.abs(np.asarray(self.object_recovered - self.object_true))
             plt.imshow(plot_object, cmap='viridis')
             plt.title('Errors')
             plt.colorbar()
@@ -800,7 +791,7 @@ class Reconstruction():
         if self.object_recovered is not None:
 
             # Update dataset reconstruction class
-            self.dataset.reconstruction = io.Reconstruction()
+            self.dataset.reconstruction = ReconstructionResult()
             self.dataset.reconstruction.object = self.object_recovered
             self.dataset.reconstruction.parameters = self.reconstruction_parameters
 
@@ -833,42 +824,42 @@ class Reconstruction():
 
         if 'tiff8' in formats:
             import tifffile
-            data = yp.changeBackend(self.object_recovered, 'numpy')
+            data = np.asarray(self.object_recovered)
             tifffile.imsave(output_filename_full + '.tiff', np.uint8(np.round(data / np.max(data) * 256.)), compress=False)
 
             if save_raw:
-                data = yp.changeBackend(self.y, 'numpy')
+                data = np.asarray(self.y)
                 tifffile.imsave(output_filename_full + '_measurement.tiff', np.uint8(np.round(data / np.max(data) * 256.)), compress=False)
 
         if 'tiff' in formats:
             import tifffile
-            data = yp.changeBackend(self.object_recovered, 'numpy')
+            data = np.asarray(self.object_recovered)
             tifffile.imsave(output_filename_full + '.tiff', np.uint16(np.round(data / np.max(data) * 65535.0)), compress=False)
 
             if save_raw:
-                data = yp.changeBackend(self.y, 'numpy')
+                data = np.asarray(self.y)
                 tifffile.imsave(output_filename_full + '_measurement.tiff', np.uint16(np.round(data / np.max(data) * 65535.0)), compress=False)
 
         if 'png' in formats:
             if downsample is not None:
-                new_size = [int(round(sz / downsample)) for sz in yp.shape(self.object_recovered)]
+                new_size = [int(round(sz / downsample)) for sz in np.shape(self.object_recovered)]
                 plt.imsave(output_filename_full + '.png',
-                           skimage.transform.resize(np.abs(yp.changeBackend(self.object_recovered, 'numpy')), new_size),
+                           skimage.transform.resize(np.abs(np.asarray(self.object_recovered)), new_size),
                            cmap='gray')
 
                 if save_raw:
-                    new_size_raw = [int(round(sz / downsample)) for sz in yp.shape(self.y)]
+                    new_size_raw = [int(round(sz / downsample)) for sz in np.shape(self.y)]
                     plt.imsave(output_filename_full + '_measurement.png',
-                               skimage.transform.resize(np.abs(yp.changeBackend(self.y, 'numpy')), new_size_raw),
+                               skimage.transform.resize(np.abs(np.asarray(self.y)), new_size_raw),
                                cmap='gray')
             else:
                 plt.imsave(output_filename_full + '.png',
-                           np.abs(yp.changeBackend(self.object_recovered, 'numpy')),
+                           np.abs(np.asarray(self.object_recovered)),
                            cmap='gray')
 
                 if save_raw:
                     plt.imsave(output_filename_full + '_measurement.png',
-                               np.abs(yp.changeBackend(self.y, 'numpy')),
+                               np.abs(np.asarray(self.y)),
                                cmap='gray')
 
             print('Saved reconstruction .png file to %s.png' % output_filename_full)
@@ -889,8 +880,8 @@ class Reconstruction():
         self.object_true = data['object_recovered'][y_idx[0]:y_idx[1], x_idx[0]:x_idx[1]]
 
         self.y_list = []
-        self.object_true = yp.pad(yp.changeBackend(yp.astype(self.object_true, yp.config.default_dtype), yp.config.default_backend), self.G.N, pad_value='mean')
-        self.y_list = ops.VecSplit(self.R * self.C * self.G * self.object_true, len(self.C.stack_operators))
+        self.object_true = ut.pad(np.asarray(ut.astype(self.object_true, ut.DEFAULT_DTYPE)), self.G.N, pad_value='mean')
+        self.y_list = linops.vector_split(self.R * self.C * self.G * self.object_true, len(self.C.stack_operators))
 
         # Modifying forward model to induce mismatch
         if adjust_by is not None:
@@ -899,10 +890,10 @@ class Reconstruction():
         if show:
             plt.figure(figsize=(9, 3))
             plt.subplot(122)
-            plt.imshow(np.abs(yp.changeBackend((ops.VecStack(self.y_list)), 'numpy')), cmap='gray')
+            plt.imshow(np.abs(np.asarray((linops.vector_stack(self.y_list)))), cmap='gray')
             plt.title('y')
             plt.subplot(121)
-            plt.imshow(np.abs(yp.changeBackend(self.object_true, 'numpy')), cmap='gray')
+            plt.imshow(np.abs(np.asarray(self.object_true)), cmap='gray')
             plt.title('true object')
 
     def normalize_measurements_single_strip(self, debug=False, use_overlap_region=True,
@@ -1001,7 +992,7 @@ class Reconstruction():
     def field_flatten_measurements(self, method='ramp', max_ramp_value=1.056):
         if method == 'ramp':
             # Apply ramp correction
-            ramp = yp.ramp(self.dataset.frame_shape, axis=1, min_value=1, max_value=max_ramp_value, reverse=False)
+            ramp = ut.ramp(self.dataset.frame_shape, axis=1, min_value=1, max_value=max_ramp_value, reverse=False)
             for measurement in self.y_list:
                 measurement /= ramp
         elif method == 'gaussian':
@@ -1022,9 +1013,9 @@ class Reconstruction():
         shape = self.dataset.frame_shape
         wavelength = self.dataset.metadata.illumination.spectrum.center['w']
 
-        self.psf = yp.iFt(otf(shape, pixel_size, wavelength, na, dtype=self.dtype, backend=self.backend))
-        self.psf /= yp.abs(yp.scalar(yp.sum(self.psf)))
-        self.psf = yp.cast(self.psf, self.dtype, self.backend)
+        self.psf = ut.iFt(otf(shape, pixel_size, wavelength, na, dtype=self.dtype, backend=self.backend))
+        self.psf /= np.abs(ut.scalar(ut.sum(self.psf)))
+        self.psf = ut.cast(self.psf, self.dtype)
 
     def estimateBackground(self, method='svd', decimation_factor=16,
                            batch_size=None, debug=False,
@@ -1041,31 +1032,31 @@ class Reconstruction():
         frame_indicies_to_process = np.random.randint(0, frame_count, batch_size)
 
         # Get matrix size and generatematrix
-        decimated_size = yp.shape(yp.filter.decimate(self.dataset.getSingleFrame(0), decimation_factor))
+        decimated_size = np.shape(ut.decimate(self.dataset.getSingleFrame(0), decimation_factor))
 
         # Generate frame matrix
-        frame_matrix = yp.zeros((yp.prod(decimated_size), frame_count))
+        frame_matrix = ut.zeros((np.prod(decimated_size), frame_count))
 
         # Generate backgorund list for output
         bg_list = []
 
         # Load decimated frames
-        for frame_index in yp.display.progressBar(frame_indicies_to_process, name='Frames Loaded for Background Subtraction'):
-            frame_matrix[:, frame_index] = yp.vec(yp.filter.decimate(self.dataset.getSingleFrame(frame_index), decimation_factor))
-            frame_matrix[:, frame_index] -= yp.scalar(yp.mean(frame_matrix[:, frame_index]))
+        for frame_index in frame_indicies_to_process:
+            frame_matrix[:, frame_index] = ut.vec(ut.decimate(self.dataset.getSingleFrame(frame_index), decimation_factor))
+            frame_matrix[:, frame_index] -= ut.scalar(ut.mean(frame_matrix[:, frame_index]))
 
         # Generate SVD of measurement
         if method == 'svd':
 
             # Compute SVD
-            u, s, v = yp.linalg.svd(np.asarray(frame_matrix), full_matrices=False)
+            u, s, v = np.linalg.svd(np.asarray(frame_matrix), full_matrices=False)
 
             # Zero out up to pca threshold
             s[pca_threshold:] = 0.0
 
             # Re-combine
             _bg = (u @ np.diag(s) @ v).T
-            bg_list = [yp.reshape(yp.cast(b, self.dtype, self.backend), decimated_size) for b in _bg]
+            bg_list = [np.reshape(ut.cast(b, self.dtype), decimated_size) for b in _bg]
 
             # Store debug elemenbts
             debug_elements = [u, s, v]
@@ -1073,24 +1064,24 @@ class Reconstruction():
         # Take gaussian blurred measurement
         elif method == 'gaussian':
             for frame_index in frame_indicies_to_process:
-                frame = yp.reshape(frame_matrix[:, frame_index], decimated_size)
+                frame = np.reshape(frame_matrix[:, frame_index], decimated_size)
 
                 kernel_size = [d // 4 for d in decimated_size]
-                bg_list.append(yp.filter.gaussian(frame, sigma=kernel_size))
+                bg_list.append(ut.gaussian(frame, sigma=kernel_size))
 
             debug_elements = []
         elif method == 'polynomial':
             for frame_index in frame_indicies_to_process:
-                frame = yp.reshape(frame_matrix[:, frame_index], decimated_size)
+                frame = np.reshape(frame_matrix[:, frame_index], decimated_size)
                 bg_list.append(flattenFrameBackground(frame, polynomial_order=2))
 
         # Take mean if requested
         if use_mean_bg:
             bg_list = sum(bg_list) / len(bg_list)
-            bg_list = yp.resize(bg_list, self.dataset.frame_shape)
+            bg_list = ut.resize(bg_list, self.dataset.frame_shape)
         else:
             # Get backgrounds of current frames used and resize to correct size
-            bg_list = [yp.resize(bg_list[index], self.dataset.frame_shape) for index in self.dataset.frame_mask]
+            bg_list = [ut.resize(bg_list[index], self.dataset.frame_shape) for index in self.dataset.frame_mask]
 
         if debug:
             print(([frame_matrix, decimated_size] + [debug_elements]))
@@ -1100,44 +1091,32 @@ class Reconstruction():
 
 
 def get_cost_function(objective, reg_types, dtype=None):
+    """Data term plus regularizers from `reg_types` ({name: weight}).
 
-    # Get object size
-    object_shape = objective.N
+    Supported: 'l2', 'l1', 'tv', 'wavelet' (db4, cycle spinning; needs pywavelets).
+    At most one of the non-smooth terms ('l1', 'tv', 'wavelet') can be used.
+    'l1F', 'bilateral', 'median' and 'tv_wavelet' depended on llops code that is
+    not available and were removed.
+    """
+    removed = {'l1F', 'bilateral', 'median', 'tv_wavelet'} & set(reg_types)
+    if removed:
+        raise ValueError('Regularizers %s are no longer supported.' % sorted(removed))
+    unknown = set(reg_types) - {'l2', 'l1', 'tv', 'wavelet'}
+    if unknown:
+        raise ValueError('Unknown regularizers %s.' % sorted(unknown))
 
-    # Get object datatype
-    dtype = objective.dtype
-
-    # Parsing regularizers
     regularizer_list = []
-    if 'l2' in reg_types.keys():
-        regularizer_list.append(reg_types['l2'] * ops.L2Norm(object_shape, dtype=dtype))
-    if 'l1' in reg_types.keys():
-        regularizer_list.append(reg_types['l1'] * ops.L1Norm(object_shape, dtype=dtype))
-    if 'l1F' in reg_types.keys():
-        regularizer_list.append(reg_types['l1F'] * ops.L1Norm(object_shape, dtype=dtype)
-                                                 * ops.FourierTransform(object_shape, dtype=dtype, pad=True))
-    if 'wavelet' in reg_types.keys():
-        regularizer_list.append(reg_types['wavelet'] * regularizers.WaveletSparsity(object_shape, dtype=dtype, wavelet_type='db4',
-                                                                                    extention_mode='symmetric', level=None,
-                                                                                    use_cycle_spinning=True, axes=None))
+    if 'l2' in reg_types:
+        regularizer_list.append(linops.L2Reg(reg_types['l2']))
+    if 'l1' in reg_types:
+        regularizer_list.append(linops.L1Reg(reg_types['l1']))
+    if 'wavelet' in reg_types:
+        regularizer_list.append(linops.WaveletReg(reg_types['wavelet'], objective.N, wavelet_type='db4',
+                                                  extension_mode='symmetric', level=None, use_cycle_spinning=True))
+    if 'tv' in reg_types:
+        regularizer_list.append(linops.TVReg(reg_types['tv']))
 
-    if 'tv' in reg_types.keys():
-        regularizer_list.append(reg_types['tv'] * regularizers.TV(object_shape, dtype=dtype))
-
-    if 'bilateral' in reg_types.keys():
-        regularizer_list.append(reg_types['bilateral'] * regularizers.RegDenoiser(object_shape, dtype=dtype, denoise_type='bilateral'))
-
-    if 'median' in reg_types.keys():
-        regularizer_list.append(reg_types['median'] * regularizers.RegDenoiser(object_shape, dtype=dtype, denoise_type='median'))
-
-    if 'tv_wavelet' in reg_types.keys():
-        regularizer_list.append(reg_types['tv_wavelet'] * regularizers.RegDenoiser(object_shape, dtype=dtype, denoise_type='tv_bregman', weight=1.0))
-
-    # Defining Cost Function
-    cost_function = objective
-    for regul in regularizer_list:
-        cost_function += regul
-    return cost_function
+    return linops.Objective(objective, regularizer_list)
 
 
 def subtract_lowpass(frame_list, sigma=100, show=False):
@@ -1193,7 +1172,7 @@ def register_roi_list(measurement_list, roi_list, axis=None,
             local_offset_list = []
             for index, overlap_roi in overlapping_rois:
                 # Get overlap regions
-                overlap_current, overlap_prev = yp.roi.getOverlapRegion((frame_current, measurement_list[index]),
+                overlap_current, overlap_prev = get_overlapping_region((frame_current, measurement_list[index]),
                                                                         (roi_current, roi_list[index]))
 
                 # Perform registration
@@ -1202,10 +1181,7 @@ def register_roi_list(measurement_list, roi_list, axis=None,
                                                                           axis=_axis,
                                                                           method=method,
                                                                           preprocess_methods=preprocess_methods,
-                                                                          pad_factor=1.5,
-                                                                          pad_type=0,
                                                                           energy_ratio_threshold=energy_ratio_threshold,
-                                                                          sigma=0.1,
                                                                           debug=False)
 
                 # Deal with axis definitions
@@ -1233,7 +1209,7 @@ def register_roi_list(measurement_list, roi_list, axis=None,
 
             # Append offset to list
             if len(local_offset_list) > 0:
-                offsets.append(tuple((np.round(yp.mean(np.asarray(local_offset_list), axis=0)[0]).tolist())))
+                offsets.append(tuple((np.round(ut.mean(np.asarray(local_offset_list), axis=0)[0]).tolist())))
                 trust_mask.append(True)
             else:
                 offsets.append((0, 0))
@@ -1300,7 +1276,7 @@ def normalize_roi_list(measurement_list,
     normalization_parameters = {'scale_list': [], 'use_overlap_region': use_overlap_region}
 
     # Get axis of motion
-    axis = yp.argmin(yp.asbackend([last - first for (last, first) in zip(roi_list[-1].start, roi_list[0].start)], 'numpy'))[0]
+    axis = ut.argmin(np.asarray([last - first for (last, first) in zip(roi_list[-1].start, roi_list[0].start)]))[0]
 
     # Get direction along axis
     motion_is_forward = [last - first for (last, first) in zip(roi_list[-1].start, roi_list[0].start)][axis] > 0
@@ -1327,13 +1303,13 @@ def normalize_roi_list(measurement_list,
             ratio_list = []
             ratio_dimensions = 0
             for index, overlap_roi in overlapping_rois:
-                overlap_current, overlap_prev = yp.roi.getOverlapRegion((frame_current, measurement_list[index]), (roi_current, roi_list[index]))
+                overlap_current, overlap_prev = get_overlapping_region((frame_current, measurement_list[index]), (roi_current, roi_list[index]))
 
-                ratio_list.append(scale_values[index] * yp.mean(yp.abs(overlap_prev)) / yp.mean(yp.abs(overlap_current)) * yp.prod(yp.shape(overlap_prev)))
-                ratio_dimensions += yp.prod(yp.shape(overlap_prev))
+                ratio_list.append(scale_values[index] * ut.mean(np.abs(overlap_prev)) / ut.mean(np.abs(overlap_current)) * np.prod(np.shape(overlap_prev)))
+                ratio_dimensions += np.prod(np.shape(overlap_prev))
 
             # Calculate average amount to scale
-            scale = yp.scalar(yp.sum([ratio / ratio_dimensions for ratio in ratio_list]))
+            scale = ut.scalar(ut.sum([ratio / ratio_dimensions for ratio in ratio_list]))
         else:
             scale = 1.0
 
@@ -1341,12 +1317,12 @@ def normalize_roi_list(measurement_list,
         rois_used.append(roi_current)
 
         # Store scale value
-        scale_values.append(yp.scalar(scale))
+        scale_values.append(ut.scalar(scale))
 
     # Wrap final value around
     if wrap_final_value or wrap_coefficient:
         # This should be equal to overlap size - extract from roi overlap
-        wrap_size = yp.min([sh - abs(st_1 - st_0) for (sh, st_1, st_0) in zip(roi_list[1].shape, roi_list[1].start, roi_list[0].start)])
+        wrap_size = ut.min([sh - abs(st_1 - st_0) for (sh, st_1, st_0) in zip(roi_list[1].shape, roi_list[1].start, roi_list[0].start)])
 
         # Determine size of ROI to measure
         wrap_roi_size = list(roi_list[0].shape)
@@ -1362,8 +1338,8 @@ def normalize_roi_list(measurement_list,
             first_start[axis] = roi_list[0].shape[axis] - wrap_size
 
         # Create ROI objects
-        roi_first = yp.Roi(start=first_start, shape=wrap_roi_size)
-        roi_last = yp.Roi(start=last_start, shape=wrap_roi_size)
+        roi_first = Roi(start=first_start, shape=wrap_roi_size)
+        roi_last = Roi(start=last_start, shape=wrap_roi_size)
 
         # Append mean values to list
         first_region = measurement_list[0][roi_first.slice]
@@ -1373,8 +1349,8 @@ def normalize_roi_list(measurement_list,
         second_region = second_region[second_region != 0.0]
 
         # Note that the mis-match is not a bug - the cycle loops
-        wrapped_mean_second = yp.mean(yp.real(first_region[~yp.isnan(first_region)]))
-        wrapped_mean_first = yp.mean(yp.real(second_region[~yp.isnan(second_region)]))
+        wrapped_mean_second = ut.mean(np.real(first_region[~np.isnan(first_region)]))
+        wrapped_mean_first = ut.mean(np.real(second_region[~np.isnan(second_region)]))
 
     # Store normalization parameters
     normalization_parameters['scale_list'].append({'scale': scale_values})
@@ -1384,7 +1360,7 @@ def normalize_roi_list(measurement_list,
 
         # Calculate necessary mean ratio
         if wrap_coefficient is None:
-            wrap_coefficient = yp.scalar((scale_values[0] * wrapped_mean_second) / (scale_values[-1] * wrapped_mean_first)) / len(measurement_list)
+            wrap_coefficient = ut.scalar((scale_values[0] * wrapped_mean_second) / (scale_values[-1] * wrapped_mean_first)) / len(measurement_list)
             print('Calculated wrapping coefficient %g' % wrap_coefficient)
         else:
             print('Using wrapping coefficient %g' % wrap_coefficient)
@@ -1418,7 +1394,7 @@ def normalize_roi_list(measurement_list,
         if wrap_final_value:
             diff = np.append(diff, (scale_values[0] * wrapped_mean_first) - (scale_values[-1] * wrapped_mean_second))
 
-        print('L2 difference: %g' % (yp.norm(diff)))
+        print('L2 difference: %g' % (np.linalg.norm(diff)))
 
     # Return
     return scale_values, normalization_parameters
@@ -1428,16 +1404,15 @@ def flattenFrameBackground(frame, polynomial_order=2, debug=False):
     """Given a frame, estimate the background using a polynomial fit."""
 
     # Convert to numpy backend
-    original_backend = yp.getBackend(frame)
-    original_dtype = yp.getDatatype(frame)
-    frame = yp.changeBackend(frame, 'numpy')
+    original_dtype = ut.dtype_name(frame)
+    frame = np.asarray(frame)
 
     # Define data as projections onto each axis
     data_x = np.sum(frame, axis=0)
-    data_x /= yp.max(data_x)
+    data_x /= ut.max(data_x)
 
     data_y = np.sum(frame, axis=1)
-    data_y /= yp.max(data_y)
+    data_y /= ut.max(data_y)
 
     # Calculate pixel coordinates
     coords_x = np.arange(frame.shape[1])
@@ -1451,8 +1426,8 @@ def flattenFrameBackground(frame, polynomial_order=2, debug=False):
     bg = (fit_func_x(coords_x)[np.newaxis, :] * fit_func_y(coords_y)[:, np.newaxis])
 
     # Convert back to origional backend
-    bg = yp.changeBackend(bg, original_backend)
-    bg = yp.astype(bg, new_dtype=original_dtype)
+    bg = np.asarray(bg)
+    bg = ut.astype(bg, original_dtype)
 
     # Print debugging information
     if debug:
@@ -1498,7 +1473,7 @@ def normalize_segments(roi_list, measurement_list, write_results=True, debug=Fal
 
             # Get overlap regions
             index, overlap_roi = overlapping_rois[0]
-            overlap_current, overlap_prev = yp.roi.getOverlapRegion((frame_current, measurement_list[index]), (roi_current, roi_list[index]))
+            overlap_current, overlap_prev = get_overlapping_region((frame_current, measurement_list[index]), (roi_current, roi_list[index]))
             overlap_pair_list.append((overlap_current, overlap_prev))
 
         # Indicate that we have "used" this ROI
@@ -1509,7 +1484,7 @@ def normalize_segments(roi_list, measurement_list, write_results=True, debug=Fal
     for (index, pair) in enumerate(overlap_pair_list):
 
         # Compute ratio of second pair to first
-        overlap_ratio_meas = yp.cast(pair[1] / pair[0], backend='numpy')
+        overlap_ratio_meas = ut.cast(pair[1] / pair[0])
 
         # Vectorize
         x_single = np.arange(overlap_roi_list[index].start[1], overlap_roi_list[index].end[1])
@@ -1547,10 +1522,10 @@ def normalize_segments(roi_list, measurement_list, write_results=True, debug=Fal
             plt.title(str(fit_coefficients_list[index]))
 
     # Seralize normalization filters
-    normalization_vector_list_serial = [yp.prod(normalization_vector_list[:index + 1]) for index in range(len(normalization_vector_list))]
+    normalization_vector_list_serial = [np.prod(normalization_vector_list[:index + 1]) for index in range(len(normalization_vector_list))]
 
     # Append ones to the first vector
-    normalization_vector_list_serial = [yp.ones(normalization_vector_list_serial[0].shape)] + normalization_vector_list_serial
+    normalization_vector_list_serial = [ut.ones(normalization_vector_list_serial[0].shape)] + normalization_vector_list_serial
 
     # # Apply weighting if desired
     # if write_results:
@@ -1559,11 +1534,11 @@ def normalize_segments(roi_list, measurement_list, write_results=True, debug=Fal
     #         measurement = measurement_list[index]
     #
     #         # Crop normalization to correct FOV
-    #         normalization = normalization[roi_list[index].start[1]:roi_list[index].start[1] + yp.shape(measurement)[1]]
+    #         normalization = normalization[roi_list[index].start[1]:roi_list[index].start[1] + np.shape(measurement)[1]]
     #         # normalization_vector_list_serial[index] = normalization
     #
     #         # Broadcast along last dimension
-    #         measurement[:] = yp.bcast(measurement, yp.changeBackend(normalization, yp.getBackend(measurement)))
+    #         measurement[:] = (measurement * np.asarray(normalization))
 
     # Return weighting functions
     return normalization_vector_list_serial
@@ -1593,7 +1568,7 @@ def estimateBackgroundList(frame_list, polynomial_order=2, downsample=32, debug=
 
     # Normalize
     bg = bg / len(frame_list)
-    bg = bg / yp.max(bg)
+    bg = bg / ut.max(bg)
 
     # Return
     return bg
@@ -1602,10 +1577,10 @@ def estimateBackgroundList(frame_list, polynomial_order=2, downsample=32, debug=
 def estimateBackgroundPolynomial(frame, polynomial_order=1, downsample=32, debug=False):
     """Calculates the background of a frame using polynomail fit."""
     # Downsample frame
-    frame_downsampled = yp.filter.downsample(yp.changeBackend(frame, 'numpy'), downsample)
+    frame_downsampled = ut.downsample(np.asarray(frame), downsample)
 
     # Fit pixels to line
-    points_y, points_x = yp.grid(yp.shape(frame_downsampled), backend='numpy')
+    points_y, points_x = ut.grid(np.shape(frame_downsampled))
     mask = frame_downsampled != 0
     fit_coefficients_y = np.polyfit(points_y[mask].ravel(), frame_downsampled[mask].ravel(), polynomial_order)
     fit_coefficients_x = np.polyfit(points_x[mask].ravel(), frame_downsampled[mask].ravel(), polynomial_order)
@@ -1615,26 +1590,26 @@ def estimateBackgroundPolynomial(frame, polynomial_order=1, downsample=32, debug
     fit_fn_x = np.poly1d(fit_coefficients_x)
 
     # Create flat-field vectors
-    fit_vector_y = fit_fn_y(np.arange(yp.shape(frame_downsampled)[0]))
-    fit_vector_x = fit_fn_x(np.arange(yp.shape(frame_downsampled)[1]))
+    fit_vector_y = fit_fn_y(np.arange(np.shape(frame_downsampled)[0]))
+    fit_vector_x = fit_fn_x(np.arange(np.shape(frame_downsampled)[1]))
 
     # Normalize flat-field vectors
-    fit_vector_y /= yp.mean(fit_vector_y)
-    fit_vector_x /= yp.mean(fit_vector_x)
+    fit_vector_y /= ut.mean(fit_vector_y)
+    fit_vector_x /= ut.mean(fit_vector_x)
 
     # Expand and upsample
-    flat_field_y = yp.squeeze(yp.resize(fit_vector_y[:, np.newaxis], (yp.shape(frame)[0], 1)))
-    flat_field_x = yp.squeeze(yp.resize(fit_vector_x[np.newaxis, :], (1, yp.shape(frame)[1])))
+    flat_field_y = np.squeeze(ut.resize(fit_vector_y[:, np.newaxis], (np.shape(frame)[0], 1)))
+    flat_field_x = np.squeeze(ut.resize(fit_vector_x[np.newaxis, :], (1, np.shape(frame)[1])))
 
     # Cast to correct dtype
-    flat_field = yp.changeBackend(flat_field_y, yp.getBackend(frame)), yp.changeBackend(flat_field_x, yp.getBackend(frame))
+    flat_field = np.asarray(flat_field_y), np.asarray(flat_field_x)
 
     # Show debuging informaiton if desired
     if debug:
         import matplotlib.pyplot as plt
         plt.figure()
         plt.subplot(121)
-        plt.imshow(yp.outer(flat_field[0], flat_field[1]))
+        plt.imshow(np.outer(flat_field[0], flat_field[1]))
         plt.subplot(122)
         plt.imshow(frame)
 
@@ -1651,7 +1626,7 @@ def normalize_measurements(dataset, blur_axis=1, decimation_factor=8, flatten_fi
         dataset.frame_segment_list = [segment_index]
 
         # Load measurement list
-        measurement_list = [yp.filter.decimate(dataset.frame_list[index], decimation_factor) for index in range(len(dataset.frame_mask))]
+        measurement_list = [ut.decimate(dataset.frame_list[index], decimation_factor) for index in range(len(dataset.frame_mask))]
 
         # Get ROI list from dataset metadata
         roi_list_measurements = [roi.copy() for roi in dataset.roi_list]
@@ -1688,8 +1663,8 @@ def normalize_measurements(dataset, blur_axis=1, decimation_factor=8, flatten_fi
         edge_normalization_factors_list.append(edge_normalization_factors)
 
         # Stitch segment
-        G = ops.Segmentation(roi_list_measurements)
-        y = ops.VecStack(measurement_list)
+        G = linops.Segmentation(roi_list_measurements)
+        y = linops.vector_stack(measurement_list)
 
         # Append segment and segment roi to list
         stitched_segment_list.append(G.inv * y)
@@ -1699,7 +1674,7 @@ def normalize_measurements(dataset, blur_axis=1, decimation_factor=8, flatten_fi
     alignRoiListToOrigin(stitched_segment_roi_list)
 
     if debug:
-        yp.listPlotFlat(stitched_segment_list)
+        ut.list_plot_flat(stitched_segment_list)
 
     if len(stitched_segment_roi_list) > 1:
         # Perform segment normalization
@@ -1711,18 +1686,18 @@ def normalize_measurements(dataset, blur_axis=1, decimation_factor=8, flatten_fi
 
     else:
         segment_roi = stitched_segment_roi_list[0]
-        segment_normalization_list = [yp.ones(segment_roi.end[1], dataset.dtype, dataset.backend)]
+        segment_normalization_list = [ut.ones(segment_roi.end[1], dataset.dtype)]
 
     # Stitch measurements and compute flat-field
-    G = ops.Segmentation(stitched_segment_roi_list, alpha_blend_size=0)
+    G = linops.Segmentation(stitched_segment_roi_list, alpha_blend_size=0)
 
     # Concatenate measurements
-    y = ops.VecStack(stitched_segment_list)
+    y = linops.vector_stack(stitched_segment_list)
 
     # Check that all ROI objects are of the correct dimensions
     for segment, roi in zip(stitched_segment_list, stitched_segment_roi_list):
-        assert all([yp.shape(segment)[i] == roi.shape[i] for i in range(len(roi.shape))])
-        assert yp.shape(segment)[0] == stitched_segment_roi_list[0].shape[0], "All segments must have same height!"
+        assert all([np.shape(segment)[i] == roi.shape[i] for i in range(len(roi.shape))])
+        assert np.shape(segment)[0] == stitched_segment_roi_list[0].shape[0], "All segments must have same height!"
 
     # Stitch downsampled recon
     stitched = G.inv * y
@@ -1731,7 +1706,7 @@ def normalize_measurements(dataset, blur_axis=1, decimation_factor=8, flatten_fi
     flat_field_y, flat_field_x = estimateBackgroundPolynomial(stitched, polynomial_order=polynomial_order, debug=debug)
 
     # Convert all variables back to original datatype
-    segment_normalization_list = [yp.changeBackend(segment, dataset.backend) for segment in segment_normalization_list]
+    segment_normalization_list = [np.asarray(segment) for segment in segment_normalization_list]
 
     # Combine both segment and frame normalization factors into a single, frame-based normalization factor list
     frame_normalization_list_y, frame_normalization_list_x = [], []
@@ -1741,11 +1716,11 @@ def normalize_measurements(dataset, blur_axis=1, decimation_factor=8, flatten_fi
         _segment_normalization = segment_normalization[segment_roi.start[1]:segment_roi.end[1]]
 
         # Generate frame normalization list in x (includes flat field, segment normalization, and single-frame edge matching)
-        flat_field_x_filtered = flat_field_x[segment_roi.start[1]:segment_roi.end[1]] if flat_field_x is not None else yp.ones(segment_roi.shape[1])
-        frame_normalization_list_x += [yp.filter.upsample(((1 / flat_field_x_filtered) * _segment_normalization)[frame_roi.start[1]: frame_roi.end[1]], decimation_factor) * factor for (frame_roi, factor) in zip(frame_roi_list, edge_normalization_factors)]
+        flat_field_x_filtered = flat_field_x[segment_roi.start[1]:segment_roi.end[1]] if flat_field_x is not None else ut.ones(segment_roi.shape[1])
+        frame_normalization_list_x += [ut.upsample(((1 / flat_field_x_filtered) * _segment_normalization)[frame_roi.start[1]: frame_roi.end[1]], decimation_factor) * factor for (frame_roi, factor) in zip(frame_roi_list, edge_normalization_factors)]
 
         # Generate frame normalization list in y (includes only flat-field)
-        flat_field_y_filtered = flat_field_y[segment_roi.start[0]:segment_roi.end[0]] if flat_field_y is not None else yp.ones(segment_roi.shape[0])
-        frame_normalization_list_y += [yp.filter.upsample((1 / flat_field_y_filtered)[frame_roi.start[0]: frame_roi.end[0]], decimation_factor) for frame_roi in frame_roi_list]
+        flat_field_y_filtered = flat_field_y[segment_roi.start[0]:segment_roi.end[0]] if flat_field_y is not None else ut.ones(segment_roi.shape[0])
+        frame_normalization_list_y += [ut.upsample((1 / flat_field_y_filtered)[frame_roi.start[0]: frame_roi.end[0]], decimation_factor) for frame_roi in frame_roi_list]
 
     return (frame_normalization_list_y, frame_normalization_list_x)

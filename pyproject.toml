@@ -10,14 +10,15 @@ readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Zachary F. Phillips" }, { name = "Sarah Dean" }]
 # Archived research code: pinned to the last numpy 1.x line. Not tested on numpy 2.
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "numpy>=1.24,<2",
     "scipy>=1.10,<1.14",
     "matplotlib>=3.7,<3.10",
     "scikit-image>=0.21,<0.25",
-    "tifffile",
-    # Not on PyPI; install manually (see README): llops, comptic
+    "tifffile>=2022.4",
+    "imageio>=2.16",
+    "pywavelets>=1.4",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +27,15 @@ acquisition = ["pyserial", "matplotlib-scalebar"]
 # Interactive kernel plots in blurkernel.py
 plotly = ["plotly"]
 notebooks = ["jupyter"]
+test = ["pytest"]
 
 [tool.setuptools.packages.find]
 include = ["htdeblur*"]
+
+[tool.setuptools.package-data]
+htdeblur = ["resources/*.png"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+filterwarnings = ["ignore::DeprecationWarning:matplotlib.*"]
